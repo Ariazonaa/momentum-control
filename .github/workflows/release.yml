@@ -29,6 +29,8 @@ env:
 jobs:
   package:
     name: setup.exe + portable
+    # GitHub only: Gitea falls back to these workflows for mirrored commits without .gitea/, where choco, upload-artifact@v4 etc. are missing.
+    if: github.server_url == 'https://github.com'
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -80,6 +82,8 @@ jobs:
 
   linux:
     name: Linux archive (${{ matrix.arch }})
+    # GitHub only: Gitea falls back to these workflows for mirrored commits without .gitea/, where choco, upload-artifact@v4 etc. are missing.
+    if: github.server_url == 'https://github.com'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:

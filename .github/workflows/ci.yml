@@ -32,6 +32,8 @@ env:
 jobs:
   linux:
     name: Tests Protocol + Core (Linux)
+    # GitHub only: Gitea falls back to these workflows for mirrored commits without .gitea/, where choco, upload-artifact@v4 etc. are missing.
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -46,6 +48,8 @@ jobs:
 
   windows:
     name: Solution, Tests, AOT (Windows)
+    # GitHub only: Gitea falls back to these workflows for mirrored commits without .gitea/, where choco, upload-artifact@v4 etc. are missing.
+    if: github.server_url == 'https://github.com'
     runs-on: windows-latest
     timeout-minutes: 45
     steps:

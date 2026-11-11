@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   linux-desktop:
+    # GitHub only: Gitea falls back to these workflows for mirrored commits without .gitea/, where choco, upload-artifact@v4 etc. are missing.
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
