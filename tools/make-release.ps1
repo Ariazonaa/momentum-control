@@ -1,4 +1,4 @@
-# Baut die Auslieferungs-Artefakte für MOMENTUM 4 Control:
+# Baut die Auslieferungs-Artefakte für MOMENTUM Control:
 #   1. setup.exe  – per-User-Installer (Inno Setup, kein Admin)
 #   2. portable    – ZIP der self-contained App mit Portable-Marker (Daten neben der Exe)
 #
@@ -43,7 +43,7 @@ Write-Host 'Baue portable Variante ...' -ForegroundColor Cyan
 Copy-Item $appDir $portableDir -Recurse
 New-Item -ItemType File -Path (Join-Path $portableDir 'Momentum4Control.portable') -Force | Out-Null
 @"
-MOMENTUM 4 Control – portable
+MOMENTUM Control – portable
 =============================
 
 Diese Variante braucht keine Installation. Entpacke den Ordner an einen

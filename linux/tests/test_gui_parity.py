@@ -59,7 +59,7 @@ class ParityGuiTests(unittest.TestCase):
         self.assertEqual([call[2] for call in self.calls if call[0:2] == ('write', 'auto_power_off')], [0, 900, 1800, 3600])
 
     def test_project_release_failure_and_success_keep_headset_and_page(self):
-        self.window.worker.release_checker = lambda cancelled=None: ProjectRelease('v9', 'https://github.com/Ariazonaa/momentum4-control/releases/tag/v9')
+        self.window.worker.release_checker = lambda cancelled=None: ProjectRelease('v9', 'https://github.com/Ariazonaa/momentum-control/releases/tag/v9')
         self.window.show_section('equalizer')
         client = self.window.worker.client
         snapshot = self.window.snapshot
@@ -342,7 +342,7 @@ class ParityGuiTests(unittest.TestCase):
         window.background_tick()
         self.wait(lambda: not window.busy)
         checks = []
-        window.worker.release_checker = lambda cancelled=None: checks.append(True) or ProjectRelease('v1', 'https://github.com/Ariazonaa/momentum4-control/releases/tag/v1')
+        window.worker.release_checker = lambda cancelled=None: checks.append(True) or ProjectRelease('v1', 'https://github.com/Ariazonaa/momentum-control/releases/tag/v1')
         self.assertTrue(window.set_preference('check_app_updates', True))
         window.background_tick()
         self.wait(lambda: not window.busy)
