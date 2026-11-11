@@ -12,7 +12,7 @@ from momentum_control import updates
 
 
 class ReleaseProcessTests(unittest.TestCase):
-    result = {'tag': 'v1.2', 'url': 'https://github.com/Ariazonaa/momentum4-control/releases/tag/v1.2'}
+    result = {'tag': 'v1.2', 'url': 'https://github.com/Ariazonaa/momentum-control/releases/tag/v1.2'}
 
     def child(self, script):
         real_popen = subprocess.Popen
@@ -61,7 +61,7 @@ class Reply(io.BytesIO):
     status = 200
 class Opener:
     def open(self, request, timeout):
-        assert request.full_url == 'https://api.github.com/repos/Ariazonaa/momentum4-control/releases/latest'
+        assert request.full_url == 'https://api.github.com/repos/Ariazonaa/momentum-control/releases/latest'
         assert timeout <= 3
         return Reply(b'{{"tag_name":"v1.2"}}')
 urllib.request.build_opener = lambda *args: Opener()

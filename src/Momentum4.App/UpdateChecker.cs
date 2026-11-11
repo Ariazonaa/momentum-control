@@ -18,7 +18,7 @@ public sealed record UpdateInfo(bool Available, string LatestVersion, string Url
 /// </summary>
 public static class UpdateChecker
 {
-    private const string LatestReleaseApi = "https://api.github.com/repos/Ariazonaa/momentum4-control/releases/latest";
+    private const string LatestReleaseApi = "https://api.github.com/repos/Ariazonaa/momentum-control/releases/latest";
 
     /// <summary>Aktuelle Programmversion (Major.Minor.Build).</summary>
     public static Version CurrentVersion

@@ -134,5 +134,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* --title "MOMENTUM 4 Control $GITHUB_REF_NAME" \
+          gh release create "$GITHUB_REF_NAME" dist/* --title "MOMENTUM Control $GITHUB_REF_NAME" \
             --notes "Windows installer (setup.exe) and portable ZIP, plus the Linux companion as tar.gz for x64 and arm64. Built by the release workflow."

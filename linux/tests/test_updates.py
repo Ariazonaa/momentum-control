@@ -23,14 +23,14 @@ class UpdateTests(unittest.TestCase):
         reply = Reply(document)
         with patch.object(updates, '_open', return_value=reply) as transport:
             result = updates._fetch_release()
-        self.assertEqual(transport.call_args.args[0].full_url, 'https://api.github.com/repos/Ariazonaa/momentum4-control/releases/latest')
+        self.assertEqual(transport.call_args.args[0].full_url, 'https://api.github.com/repos/Ariazonaa/momentum-control/releases/latest')
         self.assertLessEqual(transport.call_args.kwargs['timeout'], 3)
         return result
 
     def test_release_uses_fixed_public_tag_link(self):
-        release = self.run_check(json.dumps({'tag_name': 'v1.4.2', 'html_url': 'https://github.com/Ariazonaa/momentum4-control/releases/tag/v1.4.2', 'assets': [{'browser_download_url': 'https://evil.invalid'}]}).encode())
+        release = self.run_check(json.dumps({'tag_name': 'v1.4.2', 'html_url': 'https://github.com/Ariazonaa/momentum-control/releases/tag/v1.4.2', 'assets': [{'browser_download_url': 'https://evil.invalid'}]}).encode())
         self.assertEqual(release.tag, 'v1.4.2')
-        self.assertEqual(release.url, 'https://github.com/Ariazonaa/momentum4-control/releases/tag/v1.4.2')
+        self.assertEqual(release.url, 'https://github.com/Ariazonaa/momentum-control/releases/tag/v1.4.2')
 
     def test_bad_tag_url_json_and_oversized_replies_fail(self):
         for value in (b'[]', b'{', b'{"tag_name":1}', b'{"tag_name":"../secret"}', b'{"tag_name":"v1", "html_url":"https://evil.invalid"}', b'{"tag_name":"v1", "tag_name":"v2"}', json.dumps({'tag_name': 'v1', 'padding': 'x' * 262144}).encode()):

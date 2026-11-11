@@ -1,10 +1,13 @@
-# MOMENTUM 4 Control
+# MOMENTUM Control
 
 Unofficial desktop app for the Sennheiser MOMENTUM 4 Wireless, with limited support for the MOMENTUM 5. It talks to
 the headset over Bluetooth (RFCOMM, GAIA) straight from the PC and runs locally. No cloud, no account, no telemetry.
 There is a Windows app and a Linux companion; both use the same C# device core.
 
 Not affiliated with Sennheiser or Sonova.
+
+Formerly *MOMENTUM 4 Control* (`Ariazonaa/momentum4-control`); renamed once the MOMENTUM 5 was supported. Existing
+installations keep their settings, install folder and autostart entry.
 
 ## Platforms and devices
 

@@ -16,7 +16,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
     <Authors>Ariazonaa</Authors>
-    <Product>MOMENTUM 4 Control (unofficial)</Product>
+    <Product>MOMENTUM Control (unofficial)</Product>
     <Version>1.1.2</Version>
 
     <!-- Gemeinsame Windows-Zielplattform für alle Projekte, die WinRT-APIs nutzen -->

@@ -1,4 +1,4 @@
-; Inno-Setup-Skript für MOMENTUM 4 Control (inoffiziell).
+; Inno-Setup-Skript für MOMENTUM Control (inoffiziell).
 ; Erzeugt ein setup.exe, das die self-contained AOT-App per-User installiert (kein Admin/UAC).
 ; Aufruf über tools/make-release.ps1; die Variablen kommen per /D von ISCC:
 ;   ISCC /DAppVersion=1.1.0 /DSourceDir="...\publish\app" /DRepoDir="X:\src\sennheiser" /DOutputDir="...\dist" installer\Momentum4Control.iss
@@ -16,10 +16,12 @@
   #define OutputDir "dist"
 #endif
 
-#define AppName "MOMENTUM 4 Control"
+#define AppName "MOMENTUM Control"
+; Name bis 1.1.x – dessen Verknüpfungen räumt [InstallDelete] bei Upgrades weg
+#define OldAppName "MOMENTUM 4 Control"
 #define AppExe "Momentum4Control.exe"
 #define AppPublisher "Ariazonaa"
-#define AppUrl "https://github.com/Ariazonaa/momentum4-control"
+#define AppUrl "https://github.com/Ariazonaa/momentum-control"
 
 [Setup]
 ; Stabile AppId (nie ändern – daran erkennt Windows Upgrades und Deinstallation)
@@ -34,8 +36,11 @@ VersionInfoVersion={#AppVersion}
 ; Per-User-Installation ohne Adminrechte → {autopf} = %LOCALAPPDATA%\Programs
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+; Ordnername bleibt wie bis 1.1.x, damit Upgrades und der Release-Smoke-Test denselben Pfad nutzen
 DefaultDirName={autopf}\Momentum 4 Control
-DefaultGroupName=MOMENTUM 4 Control
+DefaultGroupName=MOMENTUM Control
+; sonst behält ein Upgrade die Startmenü-Gruppe mit dem alten Namen
+UsePreviousGroup=no
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 UninstallDisplayIcon={app}\{#AppExe}
@@ -62,6 +67,13 @@ Name: "autostart"; Description: "Mit Windows starten (minimiert ins Infobereich-
 [Files]
 ; Der komplette self-contained Ordner – ohne Portable-Marker/Daten (die gehören nur in die portable Variante)
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "Momentum4Control.portable,Data\*"; Flags: recursesubdirs createallsubdirs ignoreversion
+
+[InstallDelete]
+; Verknüpfungen unter dem alten Namen, die ein Upgrade sonst neben den neuen liegen ließe
+Type: files; Name: "{autoprograms}\{#OldAppName}\{#OldAppName}.lnk"
+Type: files; Name: "{autoprograms}\{#OldAppName}\{#OldAppName} deinstallieren.lnk"
+Type: files; Name: "{autodesktop}\{#OldAppName}.lnk"
+Type: dirifempty; Name: "{autoprograms}\{#OldAppName}"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"

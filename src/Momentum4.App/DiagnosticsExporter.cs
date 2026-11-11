@@ -60,7 +60,7 @@ internal static class DiagnosticsExporter
     {
         using var process = Process.GetCurrentProcess();
         var text = new StringBuilder()
-            .AppendLine("MOMENTUM 4 Control – Diagnose (inoffiziell, nicht von Sennheiser)")
+            .AppendLine("MOMENTUM Control – Diagnose (inoffiziell, nicht von Sennheiser)")
             .AppendLine($"Erstellt: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}")
             .AppendLine($"Anonymisiert: {(anonymized ? "ja" : "nein")}")
             .AppendLine($"App: {typeof(DiagnosticsExporter).Assembly.GetName().Version}, {(RuntimeFeature.IsDynamicCodeSupported ? "JIT" : "Native AOT")}")

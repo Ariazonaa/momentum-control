@@ -11,8 +11,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 
-ENDPOINT = 'https://api.github.com/repos/Ariazonaa/momentum4-control/releases/latest'
-TAG_ROOT = 'https://github.com/Ariazonaa/momentum4-control/releases/tag/'
+ENDPOINT = 'https://api.github.com/repos/Ariazonaa/momentum-control/releases/latest'
+TAG_ROOT = 'https://github.com/Ariazonaa/momentum-control/releases/tag/'
 MAX_BYTES = 256 * 1024
 
 
