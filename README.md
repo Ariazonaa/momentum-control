@@ -126,7 +126,7 @@ dotnet test --solution Momentum4Control.slnx      # includes shared device and c
 .\tools\make-release.ps1                          # setup.exe + portable.zip (needs Inno Setup 6)
 ```
 
-You need the [.NET SDK 10.0.401+](https://dotnet.microsoft.com/download) (pinned by `global.json`) and the Visual
+You need the [.NET SDK 10.0.403+](https://dotnet.microsoft.com/download) (pinned by `global.json`) and the Visual
 Studio Build Tools with "Desktop development with C++" for the Native AOT build.
 
 The projects: `Momentum4.Protocol` (framing, codecs, the command catalog), `Momentum4.Core` (queue, state, service),
