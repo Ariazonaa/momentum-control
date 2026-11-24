@@ -330,6 +330,12 @@ public sealed partial class Momentum4Service
             notes.Add($"Headset rejected optional read 0x{exception.Command.Command.Value:x4}");
             return null;
         }
+        catch (ProtocolFormatException exception) when (exception.Kind == ProtocolFormatKind.DeviceName)
+        {
+            // Intakter Frame, nur der Name ist nicht darstellbar: nur diesen Wert verwerfen, nicht die Session (GitHub #10).
+            notes.Add("Headset reported an unreadable device name");
+            return null;
+        }
     }
 
     private void PublishControlSnapshot(HeadsetControlSnapshot snapshot)

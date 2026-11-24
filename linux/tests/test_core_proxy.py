@@ -66,6 +66,13 @@ class CoreProxyTests(unittest.TestCase):
             self.assertIsNotNone(process.process.poll())
             self.assertLess(time.monotonic()-started,.8)
 
+    def test_protocol_error_code_is_accepted(self):
+        from momentum_control.errors import CoreOperationError
+        process = self.child("r=json.loads(sys.stdin.readline())\nprint(json.dumps(dict(v=1,kind='error',id=r['id'],code='protocol',stage='',recovery_required=False,interrupted=False)),flush=True)\n")
+        with self.assertRaises(CoreOperationError) as caught:
+            process.call('snapshot', {})
+        self.assertEqual(caught.exception.code, 'protocol')
+
     def test_request_limit_denies_before_child_input(self):
         process = self.child('sys.stdin.readline()\ntime.sleep(5)\n')
         with self.assertRaisesRegex(RuntimeError, 'request'):
