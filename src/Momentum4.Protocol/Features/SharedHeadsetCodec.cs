@@ -22,9 +22,10 @@ public static class SharedHeadsetCodec
         try
         {
             var name = StrictUtf8.GetString(payload);
-            if (name.EnumerateRunes().Any(rune => IsUnprintable(rune)))
+            // Beim Lesen jede Leerzeichen-Art zulassen: iOS/watchOS benennen Geräte z. B. "Apple<U+00A0>Watch" (GitHub #10).
+            if (name.EnumerateRunes().Any(IsUnprintable))
             {
-                throw new ProtocolFormatException("Invalid device name", payload);
+                throw new ProtocolFormatException("Invalid device name", payload, ProtocolFormatKind.DeviceName);
             }
 
             return name;
@@ -40,7 +41,8 @@ public static class SharedHeadsetCodec
         ArgumentNullException.ThrowIfNull(name);
         try
         {
-            if (name.EnumerateRunes().Any(rune => IsUnprintable(rune)))
+            // Beim Umbenennen bleibt es streng: nur U+0020 als Leerzeichen.
+            if (name.EnumerateRunes().Any(rune => IsUnprintable(rune) || IsNonAsciiSpace(rune)))
             {
                 throw new ArgumentException("Device name must contain printable characters", nameof(name));
             }
@@ -77,6 +79,8 @@ public static class SharedHeadsetCodec
 
     private static bool IsUnprintable(Rune rune) => Rune.GetUnicodeCategory(rune) is
         UnicodeCategory.Control or UnicodeCategory.Format or UnicodeCategory.Surrogate or
-        UnicodeCategory.OtherNotAssigned or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator
-        || (Rune.GetUnicodeCategory(rune) == UnicodeCategory.SpaceSeparator && rune.Value != 32);
+        UnicodeCategory.OtherNotAssigned or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator;
+
+    private static bool IsNonAsciiSpace(Rune rune) =>
+        Rune.GetUnicodeCategory(rune) == UnicodeCategory.SpaceSeparator && rune.Value != 32;
 }

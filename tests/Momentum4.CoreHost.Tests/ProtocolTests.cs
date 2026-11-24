@@ -53,6 +53,10 @@ public sealed class ProtocolTests
         Assert.Throws<PrivateProtocolException>(() => PrivateProtocol.Parse(input));
     }
 
+    [Fact]
+    public void ProtocolFormatFailureHasOwnCode() =>
+        Assert.Equal("protocol", HostFailure.From(new Momentum4.Protocol.ProtocolFormatException("x", [])).Code);
+
     private sealed class FragmentStream(byte[] data) : MemoryStream(data)
     {
         public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) => base.ReadAsync(buffer[..Math.Min(1, buffer.Length)], cancellationToken);

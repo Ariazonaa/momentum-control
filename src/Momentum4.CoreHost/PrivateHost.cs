@@ -256,6 +256,7 @@ public sealed record HostFailure(string Code, string Stage = "", bool RecoveryRe
         Momentum4.Core.Dongle.DongleUpdateException update => new("firmware", update.Stage, update.RecoveryRequired, update.Interrupted),
         Momentum4.Core.Services.HeadsetPartialWriteException => new("partial"),
         Momentum4.Core.Services.FeatureNotSupportedException => new("unsupported"),
+        Momentum4.Protocol.ProtocolFormatException => new("protocol"),
         _ => new("io")
     };
 }
