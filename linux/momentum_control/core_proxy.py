@@ -226,7 +226,7 @@ class CoreProcess:
                     return message['value']
                 elif kind == 'error':
                     _schema(message, ('v', 'kind', 'id', 'code', 'stage', 'recovery_required', 'interrupted'))
-                    if message['id'] != request_id or message['code'] not in ('unsupported', 'invalid', 'io', 'cancelled', 'partial', 'firmware') or type(message['stage']) is not str or len(message['stage']) > 32 or type(message['recovery_required']) is not bool or type(message['interrupted']) is not bool:
+                    if message['id'] != request_id or message['code'] not in ('unsupported', 'invalid', 'io', 'protocol', 'cancelled', 'partial', 'firmware') or type(message['stage']) is not str or len(message['stage']) > 32 or type(message['recovery_required']) is not bool or type(message['interrupted']) is not bool:
                         raise ValueError('Invalid error')
                     self.close()
                     if message['code'] == 'firmware':
