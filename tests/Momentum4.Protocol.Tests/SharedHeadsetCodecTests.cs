@@ -46,6 +46,27 @@ public sealed class SharedHeadsetCodecTests
     public void Names_reject_invalid_utf8_controls_and_empty_payload(string hex) =>
         Assert.Throws<ProtocolFormatException>(() => SharedHeadsetCodec.DecodeName(Hex.Parse(hex), 128));
 
+    [Theory]
+    [InlineData("Apple Watch de X")]   // iOS/watchOS-Standardname (GitHub #10)
+    [InlineData("Mac Book")]
+    [InlineData("Ideographic　Space")]
+    public void Names_read_from_headset_accept_non_ascii_space_separators(string name) =>
+        Assert.Equal(name, SharedHeadsetCodec.DecodeName([.. System.Text.Encoding.UTF8.GetBytes(name), 0], 128));
+
+    [Fact]
+    public void Name_read_failures_are_typed_as_name_format_errors()
+    {
+        var exception = Assert.Throws<ProtocolFormatException>(() => SharedHeadsetCodec.DecodeName(Hex.Parse("6261640a"), 128));
+        Assert.Equal(ProtocolFormatKind.DeviceName, exception.Kind);
+        // Leer oder kaputtes UTF-8 bleibt ein Frame-Fehler (protocol.md §9: leeres OK kann eine Aktion sein).
+        Assert.Equal(ProtocolFormatKind.Frame, Assert.Throws<ProtocolFormatException>(() => SharedHeadsetCodec.DecodeName(Hex.Parse("c3"), 128)).Kind);
+        Assert.Equal(ProtocolFormatKind.Frame, Assert.Throws<ProtocolFormatException>(() => SharedHeadsetCodec.DecodeName([], 128)).Kind);
+    }
+
+    [Fact]
+    public void Rename_keeps_rejecting_non_ascii_space_separators() =>
+        Assert.Throws<ArgumentException>(() => SharedHeadsetCodec.EncodeName("Apple Watch", 30));
+
     [Fact]
     public void Names_separate_read_and_model_write_byte_limits()
     {
