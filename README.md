@@ -1,8 +1,16 @@
 # MOMENTUM Control
 
-Unofficial desktop app for the Sennheiser MOMENTUM 4 Wireless, with limited support for the MOMENTUM 5. It talks to
-the headset over Bluetooth (RFCOMM, GAIA) straight from the PC and runs locally. No cloud, no account, no telemetry.
-There is a Windows app and a Linux companion; both use the same C# device core.
+**An open-source alternative to Sennheiser Smart Control for Windows and Linux.** Change noise control, the equalizer
+and the headset settings of your MOMENTUM 4 Wireless from the PC, without picking up your phone. The MOMENTUM 5 is
+partly supported.
+
+**[Download the latest release](https://github.com/Ariazonaa/momentum-control/releases/latest)**: Windows installer
+or portable ZIP, Linux `tar.gz` for x64 and arm64.
+
+![Main window](assets/main-window.png)
+
+The app talks to the headset over Bluetooth (RFCOMM, GAIA) straight from the PC and runs locally. No cloud, no
+account, no telemetry. There is a Windows app and a Linux companion; both use the same C# device core.
 
 Not affiliated with Sennheiser or Sonova.
 
@@ -25,8 +33,6 @@ permissions and the remaining limits are in the [Linux guide](linux/README.md), 
 [validation notes](docs/linux-validation.md) and the [architecture overview](docs/architecture.md).
 
 The rest of this README describes the Windows app.
-
-![Main window](assets/main-window.png)
 
 The interface is English or German. It follows your Windows display language and you can switch it in the settings.
 This README and the license are English.
