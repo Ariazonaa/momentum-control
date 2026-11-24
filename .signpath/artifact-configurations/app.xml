@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "app": the two own exes of the published app (release.yml, "Sign app exes").
+     The GitHub artifact holds only these two files at its root. Copy of the configuration kept in SignPath. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="Momentum4Control.exe">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="m4ctl.exe">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

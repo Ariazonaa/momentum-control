@@ -7,9 +7,17 @@
 #
 #   ./tools/make-release.ps1              # Version aus Directory.Build.props
 #   ./tools/make-release.ps1 -Version 1.1.0
+#
+# Für das Signieren im Release-Workflow lässt sich der Lauf in zwei Stufen teilen, damit die Exes zwischen
+# Veröffentlichen und Packen signiert werden können (sonst stecken unsignierte Exes in setup.exe und ZIP):
+#   ./tools/make-release.ps1 -Stage Publish -AppDir C:\tmp\app   # nur Schritt 1
+#   ./tools/make-release.ps1 -Stage Package -AppDir C:\tmp\app   # Schritte 2 und 3 aus dem vorhandenen Ordner
 param(
     [string]$Version = '',
-    [string]$Dist = (Join-Path $env:LOCALAPPDATA 'Momentum4Control.build\dist')
+    [string]$Dist = (Join-Path $env:LOCALAPPDATA 'Momentum4Control.build\dist'),
+    [ValidateSet('All', 'Publish', 'Package')]
+    [string]$Stage = 'All',
+    [string]$AppDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,26 +29,43 @@ if (-not $Version) {
     if ($props -notmatch '<Version>([^<]+)</Version>') { throw 'Version nicht in Directory.Build.props gefunden.' }
     $Version = $Matches[1].Trim()
 }
-Write-Host "Version: $Version" -ForegroundColor Cyan
+Write-Host "Version: $Version ($Stage)" -ForegroundColor Cyan
 
 # --- Ordner vorbereiten ---
 $stageRoot = Join-Path $env:LOCALAPPDATA 'Momentum4Control.build\release-stage'
-$appDir = Join-Path $stageRoot 'app'
+if (-not $AppDir) { $AppDir = Join-Path $stageRoot 'app' }
 $portableDir = Join-Path $stageRoot "Momentum4Control-$Version-portable"
-foreach ($d in @($stageRoot, $Dist)) { if (Test-Path $d) { Remove-Item $d -Recurse -Force } ; New-Item -ItemType Directory -Force -Path $d | Out-Null }
 
-# --- 1. App veröffentlichen (self-contained AOT, App + m4ctl) ---
-Write-Host 'Veröffentliche App (Native AOT) ...' -ForegroundColor Cyan
-& (Join-Path $PSScriptRoot 'publish-app.ps1') -Output $appDir -Version $Version
-if ($LASTEXITCODE -ne 0) { throw "publish-app.ps1 fehlgeschlagen ($LASTEXITCODE)." }
+if ($Stage -ne 'Package') {
+    foreach ($d in @($stageRoot, $AppDir)) { if (Test-Path $d) { Remove-Item $d -Recurse -Force } }
+    New-Item -ItemType Directory -Force -Path $stageRoot | Out-Null
+
+    # --- 1. App veröffentlichen (self-contained AOT, App + m4ctl) ---
+    Write-Host 'Veröffentliche App (Native AOT) ...' -ForegroundColor Cyan
+    & (Join-Path $PSScriptRoot 'publish-app.ps1') -Output $AppDir -Version $Version
+    if ($LASTEXITCODE -ne 0) { throw "publish-app.ps1 fehlgeschlagen ($LASTEXITCODE)." }
+} else {
+    if (-not (Test-Path (Join-Path $AppDir 'Momentum4Control.exe'))) { throw "Keine veröffentlichte App in $AppDir (erst -Stage Publish)." }
+    if (Test-Path $portableDir) { Remove-Item $portableDir -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $stageRoot | Out-Null
+}
+
 # Die Update-Prüfung der App vergleicht ihre eigene Version mit dem Release-Tag. Stimmt sie nicht, meldet die App
 # auch nach dem Update weiter ein Update.
-$built = (Get-Item (Join-Path $appDir 'Momentum4Control.exe')).VersionInfo.ProductVersion.Split('+')[0]
+$built = (Get-Item (Join-Path $AppDir 'Momentum4Control.exe')).VersionInfo.ProductVersion.Split('+')[0]
 if ($built -ne $Version) { throw "Momentum4Control.exe meldet Version $built statt $Version." }
+
+if ($Stage -eq 'Publish') {
+    Write-Host "`nFertig. App in: $AppDir" -ForegroundColor Cyan
+    return
+}
+
+if (Test-Path $Dist) { Remove-Item $Dist -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $Dist | Out-Null
 
 # --- 2. Portable Variante (Marker + LIESMICH, dann ZIP) ---
 Write-Host 'Baue portable Variante ...' -ForegroundColor Cyan
-Copy-Item $appDir $portableDir -Recurse
+Copy-Item $AppDir $portableDir -Recurse
 New-Item -ItemType File -Path (Join-Path $portableDir 'Momentum4Control.portable') -Force | Out-Null
 @"
 MOMENTUM Control – portable
@@ -76,7 +101,7 @@ if ($iscc) {
     Write-Host 'Baue setup.exe (Inno Setup) ...' -ForegroundColor Cyan
     & $iscc `
         "/DAppVersion=$Version" `
-        "/DSourceDir=$appDir" `
+        "/DSourceDir=$AppDir" `
         "/DRepoDir=$repo" `
         "/DOutputDir=$Dist" `
         (Join-Path $repo 'installer\Momentum4Control.iss')

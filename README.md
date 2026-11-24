@@ -153,6 +153,22 @@ The app talks to the headset over Bluetooth and writes to `%LOCALAPPDATA%\Moment
 and it's off by default: when you turn it on (or press "Check now" in the settings) the app asks GitHub's release API
 for the latest version, nothing else. Leave it off and nothing leaves your machine.
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
+[SignPath Foundation](https://signpath.org/).
+
+The Windows builds (`Momentum4Control.exe`, `m4ctl.exe` and the setup) are built from this repository by the
+[release workflow](.github/workflows/release.yml) on GitHub Actions and signed there. Nothing built elsewhere gets
+signed. Every signing request for a release is approved by hand.
+
+- Committers and reviewers: [Ariazonaa](https://github.com/Ariazonaa)
+- Approvers: [Ariazonaa](https://github.com/Ariazonaa)
+
+Privacy: this program will not transfer any information to other networked systems unless specifically requested by
+the user or the person installing or operating it. The only such request is the optional update check described under
+**Privacy** above.
+
 ## Credits
 
 The protocol knowledge builds on these reverse-engineering projects:
