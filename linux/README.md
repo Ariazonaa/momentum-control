@@ -146,6 +146,43 @@ momentumctl connect-peer 1 --expected-name 'Phone'
 
 Add `--device ADDRESS` when more than one headset is present. `connect-peer` requires the exact current peer name and refuses unsupported model/firmware, stale identity or unavailable capacity.
 
+### Waybar module
+
+`momentumctl status --json` can feed a status bar. This is the `momentumctl` installed by MOMENTUM Control, not the unrelated Rust tool of the same name. The script needs `jq`. Save it as `~/.config/waybar/momentum.sh` and make it executable:
+
+```sh
+#!/bin/sh
+# Waybar module for MOMENTUM Control: headset battery and noise mode.
+# Prints nothing (Waybar hides the module) when no headset answers.
+out=$("${MOMENTUMCTL:-$HOME/.local/bin/momentumctl}" status --json 2>/dev/null) || exit 0
+printf '%s\n' "$out" | jq -c '
+  .settings as $s
+  | (if $s.anc_enabled == false then "off"
+     elif $s.transparency == true then "transparency"
+     elif $s.anc_enabled != true then "unknown"
+     elif $s.adaptive_anc == true then "adaptive"
+     else "anc" end) as $mode
+  | (if .battery == null then "?" else "\(.battery)%" end) as $battery
+  | {text: $battery, alt: $mode, class: $mode, percentage: (.battery // 0),
+     tooltip: "\(.device_name // .model): \($battery)\(if .charging == true then " (charging)" else "" end), noise control: \($mode)"}'
+```
+
+Then add the module to your Waybar config and to one of the `modules-*` lists:
+
+```json
+"custom/momentum": {
+  "exec": "~/.config/waybar/momentum.sh",
+  "return-type": "json",
+  "interval": 120,
+  "format": "🎧 {}",
+  "on-click": "~/.local/bin/momentum-control"
+}
+```
+
+The bar shows the battery level; the tooltip adds the charging state and the noise mode. The mode is also set as CSS class (`anc`, `adaptive`, `transparency`, `off`), so you can style it, for example `#custom-momentum.transparency { color: #8fbcbb; }`. The mode follows the same rules as the app. With several headsets, add `--device ADDRESS` to the `momentumctl` call in the script.
+
+Each update opens its own control connection, because the CLI does not go through a running GUI. Keep the interval long. The script and the module output were tested against the CLI's JSON format and without a headset (the module hides); a long-running test on hardware, also with the GUI open at the same time, has not been done yet.
+
 ## BTD 700 USB permissions and firmware
 
 The installer includes `assets/70-momentum-btd700.rules` in its owned application payload; it does not alter `/etc` or install system rules. To grant the active local desktop user access only to the BTD 700 vendor HID interfaces:
