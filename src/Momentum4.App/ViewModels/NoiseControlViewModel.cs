@@ -20,6 +20,12 @@ public sealed partial class NoiseControlViewModel : ObservableObject
 
     private readonly IActionRunner _run;
     private readonly DispatcherQueueTimer _strengthDebounce;
+    private readonly DispatcherQueueTimer _transparencyDebounce;
+    private int[] _antiWindValues = [0, 1, 2];
+    private int? _lastTransparencyLevel;
+
+    /// <summary>Transparenzstufe, die der User gerade einstellt (nur MOMENTUM 5).</summary>
+    private int? _pendingTransparency;
     private NoiseControlState? _last;
     private bool _applying;
 
@@ -33,12 +39,29 @@ public sealed partial class NoiseControlViewModel : ObservableObject
         _strengthDebounce.Interval = TimeSpan.FromMilliseconds(300); // [MC]: nur den Endwert senden
         _strengthDebounce.IsRepeating = false;
         _strengthDebounce.Tick += async (_, _) => await SendStrengthAsync();
+        _transparencyDebounce = dispatcher.CreateTimer();
+        _transparencyDebounce.Interval = TimeSpan.FromMilliseconds(300);
+        _transparencyDebounce.IsRepeating = false;
+        _transparencyDebounce.Tick += async (_, _) => await SendTransparencyAsync();
     }
 
     // List<T> statt Collection-Expression: WinRT/AOT kann nur echte Listen als ItemsSource übergeben.
     public List<string> Modes { get; } = [L.Get("ModeTransparency"), L.Get("ModeAnc"), L.Get("ModeAdaptive"), L.Get("ModeOff")];
 
-    public List<string> AntiWindOptions { get; } = [L.Get("AntiWindOff"), L.Get("AntiWindMax"), L.Get("AntiWindAuto")];
+    /// <summary>Anti-Wind-Stufen, die der Core für das Gerät erlaubt (MOMENTUM 5: nur Aus und Maximal).</summary>
+    [ObservableProperty]
+    public partial List<string> AntiWindOptions { get; set; } = [L.Get("AntiWindOff"), L.Get("AntiWindMax"), L.Get("AntiWindAuto")];
+
+    /// <summary>Transparenzstufe 0…100, nur MOMENTUM 5 mit FW 6.21.5 (Core-Freigabe).</summary>
+    [ObservableProperty]
+    public partial bool ShowTransparencyLevel { get; set; }
+
+    /// <summary>Bei ANC aus gesperrt: Der Regler schaltet ANC nie selbst ein (wie unter Linux).</summary>
+    [ObservableProperty]
+    public partial bool TransparencyLevelEnabled { get; set; }
+
+    [ObservableProperty]
+    public partial double TransparencyLevel { get; set; }
 
     [ObservableProperty]
     public partial bool IsAvailable { get; set; }
@@ -64,15 +87,25 @@ public sealed partial class NoiseControlViewModel : ObservableObject
 
     private bool? _lastAutoPause;
 
-    public void Apply(NoiseControlState? state, bool? autoPause, bool connected)
+    public void Apply(NoiseControlState? state, bool? autoPause, bool connected, int? transparencyLevel = null,
+        bool canWriteTransparencyLevel = false, IReadOnlyList<int>? antiWindChoices = null)
     {
         _last = state;
         _lastAutoPause = autoPause;
+        _lastTransparencyLevel = transparencyLevel;
         _applying = true;
         try
         {
             AutoPause = autoPause == true;
             IsAvailable = connected && state is not null;
+            ApplyAntiWindChoices(antiWindChoices);
+            ShowTransparencyLevel = canWriteTransparencyLevel && transparencyLevel is not null && state is not null;
+            TransparencyLevelEnabled = ShowTransparencyLevel && state?.AncEnabled == true;
+            if (_pendingTransparency is null && transparencyLevel is { } shownLevel)
+            {
+                TransparencyLevel = shownLevel;
+            }
+
             if (state is null)
             {
                 SelectedModeIndex = -1;
@@ -89,7 +122,7 @@ public sealed partial class NoiseControlViewModel : ObservableObject
                 Strength = 100 - state.Level;
             }
 
-            AntiWindIndex = (int)state.AntiWind;
+            AntiWindIndex = Array.IndexOf(_antiWindValues, (int)state.AntiWind);
             ModeHint = state.Mode switch
             {
                 NoiseControlMode.Transparency => L.Get("HintTransparency"),
@@ -129,12 +162,12 @@ public sealed partial class NoiseControlViewModel : ObservableObject
 
     partial void OnAntiWindIndexChanged(int value)
     {
-        if (_applying || value is < 0 or > 2 || _last is { } last && (int)last.AntiWind == value)
+        if (_applying || value < 0 || value >= _antiWindValues.Length || _last is { } last && (int)last.AntiWind == _antiWindValues[value])
         {
             return;
         }
 
-        var antiWind = (AntiWindMode)value;
+        var antiWind = (AntiWindMode)_antiWindValues[value];
         _ = _run.RunAsync(L.Get("ActAntiWind", AntiWindOptions[value]), (service, ct) => service.SetAntiWindAsync(antiWind, ct));
     }
 
@@ -146,6 +179,60 @@ public sealed partial class NoiseControlViewModel : ObservableObject
         }
 
         _ = _run.RunAsync(L.Get(value ? "ActAutoPauseOn" : "ActAutoPauseOff"), (service, ct) => service.SetAutoPauseAsync(value, ct));
+    }
+
+    partial void OnTransparencyLevelChanged(double value)
+    {
+        if (_applying)
+        {
+            return;
+        }
+
+        _pendingTransparency = (int)Math.Round(value);
+        _transparencyDebounce.Stop();
+        _transparencyDebounce.Start();
+    }
+
+    private void ApplyAntiWindChoices(IReadOnlyList<int>? choices)
+    {
+        int[] values = choices is { Count: > 0 } ? [.. choices.Where(v => v is >= 0 and <= 2)] : [0, 1, 2];
+        if (values.SequenceEqual(_antiWindValues))
+        {
+            return;
+        }
+
+        string[] names = [L.Get("AntiWindOff"), L.Get("AntiWindMax"), L.Get("AntiWindAuto")];
+        _antiWindValues = values;
+        AntiWindOptions = values.Select(v => names[v]).ToList();
+    }
+
+    private async Task SendTransparencyAsync()
+    {
+        if (_pendingTransparency is not { } level)
+        {
+            return;
+        }
+
+        if (level == _lastTransparencyLevel)
+        {
+            _pendingTransparency = null;
+            return;
+        }
+
+        await _run.RunAsync(L.Get("ActTransparencyLevel", level), async (service, ct) =>
+        {
+            try
+            {
+                await service.SetTransparencyLevelAsync(level, ct);
+            }
+            finally
+            {
+                if (_pendingTransparency == level)
+                {
+                    _pendingTransparency = null;
+                }
+            }
+        });
     }
 
     private async Task SendStrengthAsync()

@@ -31,21 +31,24 @@ public sealed partial class DevicesViewModel(IActionRunner run) : ObservableObje
 {
     private MultipointState? _last;
     private bool _lastConnected;
+    private bool _lastCanConnect;
 
     public ObservableCollection<PeerViewModel> Peers { get; } = [];
 
     [ObservableProperty]
     public partial string Hint { get; set; } = string.Empty;
 
-    public void Apply(MultipointState? state, bool connected)
+    /// <param name="canConnectPeers">Verbinden nur am MOMENTUM 4; am MOMENTUM 5 bleibt die Liste nur lesend (wie unter Linux).</param>
+    public void Apply(MultipointState? state, bool connected, bool canConnectPeers = true)
     {
-        if (Equals(state, _last) && connected == _lastConnected && Peers.Count > 0)
+        if (Equals(state, _last) && connected == _lastConnected && canConnectPeers == _lastCanConnect && Peers.Count > 0)
         {
             return;
         }
 
         _last = state;
         _lastConnected = connected;
+        _lastCanConnect = canConnectPeers;
         Peers.Clear();
         if (state is null)
         {
@@ -57,7 +60,7 @@ public sealed partial class DevicesViewModel(IActionRunner run) : ObservableObje
         var full = state.MaxConnections is { } max && connectedCount >= max;
         foreach (var device in state.Devices)
         {
-            Peers.Add(new PeerViewModel(device, connected && !device.Connected && !device.IsThisComputer && !full, ConnectAsync));
+            Peers.Add(new PeerViewModel(device, canConnectPeers && connected && !device.Connected && !device.IsThisComputer && !full, ConnectAsync));
         }
 
         Hint = full

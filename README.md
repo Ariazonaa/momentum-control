@@ -24,11 +24,13 @@ installations keep their settings, install folder and autostart entry.
 | Frontend | WinUI 3 app with tray icon, plus the `m4ctl` command line | Qt app `momentum-control`, plus the `momentumctl` command line |
 | How to get it | Installer or portable zip from the releases | `tar.gz` from the releases (x64, arm64) or built from source, see [`linux/README.md`](linux/README.md) |
 | MOMENTUM 4 | Checked on a real headset, firmware 3.37.3 and 3.38.3 | Same commands and firmware gates through the shared core; the Linux hardware checks were done with a MOMENTUM 5 |
-| MOMENTUM 5 | The shared core recognises it, but nobody has tested it on Windows yet, and the M5-only controls have no UI here | Checked on a real headset, firmware 6.21.5 (model M5AEBT); any other firmware is read-only |
-| BTD 700 dongle | Not supported | USB status and codec selection; the firmware updater is experimental and flashing was never verified on hardware |
+| MOMENTUM 5 | Same controls and session as on Linux (firmware 6.21.5), but only tested against the simulator, not yet on a real headset under Windows | Checked on a real headset, firmware 6.21.5 (model M5AEBT); any other firmware is read-only |
+| BTD 700 dongle | Not supported (Linux only) | USB status and codec selection; the firmware updater is experimental and flashing was never verified on hardware |
 
-On the MOMENTUM 5 the Linux app adds transparency level, immersive audio, head tracking and battery protection. Its
-equalizer has eight bands instead of five, and wind reduction only knows off and maximum. The details, the BTD 700
+On the MOMENTUM 5 both apps add transparency level, immersive audio with head tracking, battery protection and
+transparency during calls. Its equalizer has eight bands instead of five, and wind reduction only knows off and
+maximum. On Windows an M5 is driven exactly like on Linux: no notification registration, the state is read every poll
+interval. The details, the BTD 700
 permissions and the remaining limits are in the [Linux guide](linux/README.md), the
 [validation notes](docs/linux-validation.md) and the [architecture overview](docs/architecture.md).
 
@@ -49,6 +51,8 @@ All of this is checked on a real headset (firmware 3.37.3 and 3.38.3).
 - Tray icon with a quick panel on left-click and the full menu on right-click; about 5 MB of RAM while it sits in the tray
 - Reads the battery over Windows when the GAIA link is down (shown as "(Windows)")
 - Rename the headset
+- MOMENTUM 5 (firmware 6.21.5): transparency level, immersive audio, head tracking, battery protection, transparency
+  during calls; shown only when an M5 is connected (not yet tested on a real M5 under Windows)
 - A small command line, `m4ctl`, for scripts and hotkeys
 - Optional start with Windows, minimized to the tray
 - Reconnects on its own when the headset comes back
@@ -95,6 +99,8 @@ m4ctl strength 80          # ANC strength
 m4ctl preset MyCurve
 m4ctl battery              # just the number, for scripts
 m4ctl autooff 30
+m4ctl immersive on         # MOMENTUM 5 only
+m4ctl sidetone 2           # transparency during calls, MOMENTUM 5 only for now
 ```
 
 Settings, presets and logs are in `%LOCALAPPDATA%\Momentum4Control\`. Logs are deleted after 14 days.
@@ -106,7 +112,10 @@ Settings, presets and logs are in `%LOCALAPPDATA%\Momentum4Control\`. Logs are d
 - It can't put the headset into pairing mode. Do that on the headset.
 - Sound Personalization (sound mode 3) is left alone; its preconditions aren't clear.
 - The bundled EQ presets are my own, not the ones from Smart Control.
-- Only one paired MOMENTUM 4 at a time.
+- Only one paired headset at a time.
+- Transparency during calls (sidetone) is not offered on the MOMENTUM 4 yet: the headset reports the level, but nobody
+  has confirmed by ear that changing it works.
+- No BTD 700 dongle support on Windows.
 - The phone's Smart Control app uses the same channel. I haven't tested both connected at once.
 
 ## Troubleshooting

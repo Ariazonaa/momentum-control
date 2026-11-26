@@ -229,7 +229,7 @@ public sealed class SharedHeadsetParityTests
         };
         var operation = Task.Run(() => service.SetBooleanControlAsync(HeadsetBooleanControl.SmartPause, true, TestContext.Current.CancellationToken), TestContext.Current.CancellationToken);
         await blocked.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
-        service.RequestRefresh(RefreshScope.Battery);
+        service.RequestRefresh(RefreshScope.All); // am M5 laufen Teil-Refreshes höchstens alle 30 s, ein voller immer
         await Task.Delay(30, TestContext.Current.CancellationToken);
         Assert.DoesNotContain(fixture.Requests, frame => frame.Command.Value == 0x0603);
         release.SetResult();
@@ -239,8 +239,10 @@ public sealed class SharedHeadsetParityTests
             await Task.Delay(5, TestContext.Current.CancellationToken);
         }
 
+        // Der Poll (am M5 ein voller Snapshot) beginnt erst nach dem Zurücklesen der Transaktion: Write 0x080c, dann 0x080d.
         var batteryIndex = fixture.Requests.FindIndex(frame => frame.Command.Value == 0x0603);
-        var lastBehaviorRead = fixture.Requests.FindLastIndex(frame => frame.Command.Value == 0x0802);
-        Assert.True(batteryIndex > lastBehaviorRead && lastBehaviorRead > fixture.Requests.FindIndex(frame => frame.Command.Value == 0x080c));
+        var writeIndex = fixture.Requests.FindIndex(frame => frame.Command.Value == 0x080c);
+        var readbackIndex = fixture.Requests.FindIndex(writeIndex + 1, frame => frame.Command.Value == 0x080d);
+        Assert.True(writeIndex >= 0 && readbackIndex > writeIndex && batteryIndex > readbackIndex);
     }
 }

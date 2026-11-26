@@ -203,10 +203,19 @@ internal sealed class SharedHeadsetFixture
         Transport.SetState(TransportState.Disconnected);
     }
 
-    public async Task<Momentum4Service> StartAsync(bool polling = false)
+    public Task<Momentum4Service> StartAsync(bool polling = false) =>
+        StartWithAsync(new Momentum4ServiceOptions { RegisterNotifications = false, ReadSerialNumber = false, EnablePolling = polling, Reconnect = false, PeerConnectTimeout = PeerConnectTimeout });
+
+    /// <summary>Wie die Windows-App (<c>HeadsetHost</c>): Notifications, Seriennummer und Polling an, Uhr gefälscht.</summary>
+    public Task<Momentum4Service> StartWindowsAsync()
     {
-        var service = new Momentum4Service(Transport, CommandPolicy.Production,
-            new Momentum4ServiceOptions { RegisterNotifications = false, ReadSerialNumber = false, EnablePolling = polling, Reconnect = false, PeerConnectTimeout = PeerConnectTimeout }, NullLoggerFactory.Instance, Time);
+        Time ??= new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        return StartWithAsync(new Momentum4ServiceOptions { Reconnect = false, PeerConnectTimeout = PeerConnectTimeout });
+    }
+
+    private async Task<Momentum4Service> StartWithAsync(Momentum4ServiceOptions options)
+    {
+        var service = new Momentum4Service(Transport, CommandPolicy.Production, options, NullLoggerFactory.Instance, Time);
         service.Start();
         for (var attempt = 0; attempt < 1000 && service.Store.Current.Connection != ConnectionState.Connected; attempt++)
         {

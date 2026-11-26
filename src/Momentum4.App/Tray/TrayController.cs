@@ -49,7 +49,7 @@ internal sealed class TrayController : IDisposable
         _quick = quick;
         _quit = quit;
         _logger = host.LoggerFactory.CreateLogger<TrayController>();
-        _icon = new TrayIcon("MOMENTUM 4", Path.Combine(AppContext.BaseDirectory, "Assets"));
+        _icon = new TrayIcon("MOMENTUM Control", Path.Combine(AppContext.BaseDirectory, "Assets"));
         _icon.OpenRequested += (_, _) => _dispatcher.TryEnqueue(() => _open());
         _icon.SelectRequested += (_, _) =>
         {
@@ -87,14 +87,15 @@ internal sealed class TrayController : IDisposable
 
     private void UpdateTooltip(Momentum4State? state)
     {
+        var product = ProductName.For(state?.Device?.ModelId);
         var text = state?.Connection switch
         {
-            ConnectionState.Connected when !_host.Settings.BatteryInTooltip || state.BatteryPercent is null => L.Get("TrayConnected"),
-            ConnectionState.Connected => L.Get("TrayConnectedBattery", state.BatteryPercent) + (state.Charging == true ? L.Get("ChargingSuffix") : string.Empty),
-            ConnectionState.Connecting or ConnectionState.Initializing => L.Get("TrayConnecting"),
+            ConnectionState.Connected when !_host.Settings.BatteryInTooltip || state.BatteryPercent is null => L.Get("TrayConnected", product),
+            ConnectionState.Connected => L.Get("TrayConnectedBattery", product, state.BatteryPercent) + (state.Charging == true ? L.Get("ChargingSuffix") : string.Empty),
+            ConnectionState.Connecting or ConnectionState.Initializing => L.Get("TrayConnecting", product),
             null when _host.StartupProblem is not null => L.Get("TrayNoHeadset"),
-            _ when state?.DisplayBattery is (var percent, true) && _host.Settings.BatteryInTooltip => L.Get("TrayWindows", percent),
-            _ => L.Get("TrayDisconnected"),
+            _ when state?.DisplayBattery is (var percent, true) && _host.Settings.BatteryInTooltip => L.Get("TrayWindows", product, percent),
+            _ => L.Get("TrayDisconnected", product),
         };
         _icon.SetTooltip(text);
     }
@@ -105,7 +106,7 @@ internal sealed class TrayController : IDisposable
         var connected = state?.Connection == ConnectionState.Connected;
         var items = new List<TrayMenuItem>
         {
-            new("MOMENTUM 4", Enabled: false),
+            new(ProductName.For(state?.Device?.ModelId), Enabled: false),
             new(state?.DisplayBattery switch
             {
                 (var percent, false) => L.Get("TrayBattery", percent),

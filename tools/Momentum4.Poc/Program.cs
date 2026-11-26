@@ -69,6 +69,7 @@ try
         "setname" => await SetNameAsync(),
         "gesture" => await GestureAsync(),
         "autopause" => await AutoPauseAsync(),
+        "sidetone" => await SidetoneAsync(),
         "reasons" => await ReasonsAsync(),
         "winbattery" => await WinBatteryAsync(),
         "sdp" => await SdpAsync(),
@@ -318,6 +319,69 @@ async Task<int> ReasonsAsync()
     await Task.Delay(TimeSpan.FromSeconds(1), cancellation.Token);
     await transport.DisconnectAsync();
     return 0;
+}
+
+// Sidetone (Transparenz bei Anrufen) am M4: 0x0806 lesen, optional 0x0805 [n] setzen und zuruecklesen (Write -> Verify).
+// Nur fuer den Hardware-Test (Freigabe von Sidetone am M4 nur nach Hoerprobe); bricht bei anderem
+// Modell als M4AEBT ab, bevor etwas geschrieben wird.
+async Task<int> SidetoneAsync()
+{
+    int? target = null;
+    if (options.SetValue.Length > 0)
+    {
+        if (!int.TryParse(options.SetValue, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var level) || level is < 0 or > 5)
+        {
+            Console.WriteLine($"Stufe '{options.SetValue}' ungültig – erlaubt sind 0 bis 5.");
+            return 2;
+        }
+
+        target = level;
+    }
+
+    var address = await ResolveAddressAsync();
+    await using var transport = new RfcommTransport(address, loggerFactory.CreateLogger<RfcommTransport>(), serviceIndex: options.ServiceIndex);
+    var policy = CommandPolicy.Only(CommandCatalog.GetModelId, CommandCatalog.GetFirmwareVersion, CommandCatalog.GetSidetone, CommandCatalog.SetSidetone);
+    using var queue = new GaiaCommandQueue(transport, policy, loggerFactory.CreateLogger<GaiaCommandQueue>());
+    var client = new Momentum4Client(queue);
+    var ct = cancellation.Token;
+    var started = Stopwatch.StartNew();
+    var exchange = new List<object>();
+    queue.Traffic += (_, t) =>
+    {
+        lock (exchange)
+        {
+            exchange.Add(new { atMs = started.ElapsedMilliseconds, dir = t.Direction == TrafficDirection.Tx ? "TX" : "RX", hex = Hex.Format(t.Raw), command = t.CommandName });
+        }
+    };
+
+    await transport.ConnectAsync(ct);
+    var model = await client.GetModelIdAsync(ct);
+    var firmware = await client.GetFirmwareVersionAsync(ct);
+    Console.WriteLine($"Headset: {model}, Firmware {firmware}");
+    if (!new FeatureGate(firmware, model).IsMomentum4)
+    {
+        Console.WriteLine("Abbruch: sidetone ist nur für den MOMENTUM 4 (M4AEBT) gedacht.");
+        await transport.DisconnectAsync();
+        return 1;
+    }
+
+    async Task<int> Read() => SharedHeadsetCodec.DecodeByte((await queue.SendAsync(CommandCatalog.GetSidetone, ct)).Payload, 5, "sidetone");
+
+    var before = await Read();
+    Console.WriteLine($"Vorher:  Stufe {before}");
+    int? after = null;
+    if (target is { } value)
+    {
+        await queue.SendAsync(CommandCatalog.SetSidetone, new[] { (byte)value }, ct);
+        after = await Read();
+        Console.WriteLine($"Nachher: Stufe {after}{(after == value ? string.Empty : $" – NICHT übernommen (gewünscht {value})")}");
+    }
+
+    await transport.DisconnectAsync();
+    var path = Path.Combine(logDirectory, $"sidetone-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+    await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new { tool = "m4poc sidetone", model, firmware = firmware.ToString(), before, target, after, exchange }, new JsonSerializerOptions { WriteIndented = true }), CancellationToken.None);
+    Console.WriteLine($"Mitschnitt: {path}");
+    return target is null || after == target ? 0 : 1;
 }
 
 // Automatische Pause bei Transparenz (0x1800 setzen, 0x1801 zuruecklesen). Write -> Verify.
@@ -1132,7 +1196,7 @@ internal sealed record PocOptions(string Command, BluetoothAddress? Address, int
 {
     public static PocOptions? Parse(string[] args)
     {
-        if (args.Length == 0 || args[0] is not ("list" or "sdp" or "listen" or "read" or "state" or "monitor" or "stage6" or "set" or "preset" or "peer" or "winbattery" or "features" or "probe20" or "setname" or "gesture" or "autopause" or "reasons"))
+        if (args.Length == 0 || args[0] is not ("list" or "sdp" or "listen" or "read" or "state" or "monitor" or "stage6" or "set" or "preset" or "peer" or "winbattery" or "features" or "probe20" or "setname" or "gesture" or "autopause" or "reasons" or "sidetone"))
         {
             return null;
         }
@@ -1187,6 +1251,12 @@ internal sealed record PocOptions(string Command, BluetoothAddress? Address, int
                 default:
                     return null;
             }
+        }
+        else if (args[0] == "sidetone")
+        {
+            (setWhat, setValue, first) = args.Length >= 2 && !args[1].StartsWith("--", StringComparison.Ordinal)
+                ? ("sidetone", args[1], 2)
+                : ("sidetone", string.Empty, 1);
         }
         else if (args[0] == "setname")
         {
@@ -1288,6 +1358,8 @@ internal sealed record PocOptions(string Command, BluetoothAddress? Address, int
               m4poc stage6                            Hardware-Stufe 6–8: Anti-Wind mit beiden 0x1A00-Formaten ändern, nach
                                                       jedem Versuch den gesamten Zustand wiederherstellen und vergleichen –
                                                       ÄNDERT kurz Einstellungen (nur bei ANC an)
+              m4poc sidetone [0..5]                   nur M4: Sidetone (0x0806) lesen, mit Stufe setzen (0x0805) und
+                                                      zurücklesen – Hardware-Test, Mitschnitt als JSON
               m4poc set mode transparency|adaptive|custom|off
                                                       Noise-Control-Modus setzen (Write → Verify)
               m4poc set level 0..100                  Pegel setzen (schaltet auf Custom)

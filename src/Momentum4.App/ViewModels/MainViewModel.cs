@@ -32,6 +32,7 @@ public sealed partial class MainViewModel : ObservableObject, IActionRunner, IDi
         Equalizer = new EqualizerViewModel(this, host.Presets, dispatcher);
         Behavior = new BehaviorViewModel(this);
         Devices = new DevicesViewModel(this);
+        Spatial = new SpatialViewModel(this);
         Settings = new SettingsViewModel(host, settingsChanged);
         _hostChanged = (_, _) => _dispatcher.TryEnqueue(Attach);
         _stateChanged = (_, e) => _dispatcher.TryEnqueue(() => Apply(e.Current));
@@ -46,6 +47,8 @@ public sealed partial class MainViewModel : ObservableObject, IActionRunner, IDi
     public BehaviorViewModel Behavior { get; }
 
     public DevicesViewModel Devices { get; }
+
+    public SpatialViewModel Spatial { get; }
 
     public SettingsViewModel Settings { get; }
 
@@ -63,6 +66,10 @@ public sealed partial class MainViewModel : ObservableObject, IActionRunner, IDi
 
     [ObservableProperty]
     public partial string BatteryText { get; set; } = string.Empty;
+
+    /// <summary>Modellname in Kopfzeile und Schnellzugriff („MOMENTUM 4“, „MOMENTUM 5“, vor dem Verbinden „MOMENTUM“).</summary>
+    [ObservableProperty]
+    public partial string ProductTitle { get; set; } = ProductName.For(null);
 
     [ObservableProperty]
     public partial string DetailText { get; set; } = string.Empty;
@@ -194,19 +201,22 @@ public sealed partial class MainViewModel : ObservableObject, IActionRunner, IDi
             ConnectionState.WaitingRetry => L.Get("DisconnectedRetry"),
             _ => L.Get("Disconnected"),
         };
+        ProductTitle = ProductName.For(state.Device?.ModelId);
         DetailText = state.Device is { } device
             ? $"{device.ModelId} · Firmware {device.Firmware}" + (state.Codec is { } codec ? $" · {Momentum4.Protocol.Features.GenericAudioCodec.CodecName(codec)}" : string.Empty)
             : string.Empty;
 
         ShowProblem = state.Connection is ConnectionState.WaitingRetry or ConnectionState.Disconnected;
-        ProblemTitle = L.Get("HeadsetDisconnected");
+        ProblemTitle = L.Get("HeadsetDisconnected", ProductName.For(state.Device?.ModelId));
         ProblemMessage = L.Get("DisconnectedMessage");
         ProblemAction = L.Get("Reconnect");
 
-        NoiseControl.Apply(state.NoiseControl, state.AutoPauseOnTransparency, connected);
+        NoiseControl.Apply(state.NoiseControl, state.AutoPauseOnTransparency, connected, state.TransparencyLevel,
+            state.CanWrite(HeadsetControl.TransparencyLevel), state.ControlChoices?.GetValueOrDefault(HeadsetIntegerControl.AntiWind));
         Equalizer.Apply(state.Equalizer, connected);
-        Behavior.Apply(state.Behavior, state.AutoPowerOffSeconds, state.PromptMode, connected);
-        Devices.Apply(state.Multipoint, connected);
+        Behavior.Apply(state.Behavior, state.AutoPowerOffSeconds, state.PromptMode, connected, state);
+        Spatial.Apply(state, connected);
+        Devices.Apply(state.Multipoint, connected, state.Device is not { } peerDevice || new FeatureGate(peerDevice.Firmware, peerDevice.ModelId).IsMomentum4);
         Settings.Apply(state);
     }
 }

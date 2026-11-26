@@ -49,6 +49,12 @@ public static class ControlCommands
           m4ctl prompts voice|tones|off          Töne & Sprachansagen (Töne und Stimme, nur Töne, aus)
           m4ctl connect NAME                     gekoppeltes Gerät verbinden (Name wie in der App)
           m4ctl rename NAME                       Headset umbenennen (localName)
+          m4ctl sidetone 0..5                    Transparenz bei Anrufen (eigene Stimme hören), wo freigegeben
+        Nur MOMENTUM 5 (Firmware 6.21.5):
+          m4ctl immersive on|off                 Raumklang (Immersive Audio)
+          m4ctl headtracking on|off              Head Tracking, nur bei eingeschaltetem Raumklang
+          m4ctl batteryprotect on|off            Akkuschutz
+          m4ctl transparency 0..100              Transparenzstufe
 
         Läuft die App, führt sie den Befehl aus; sonst verbindet m4ctl selbst.
         Exit-Code: 0 ausgeführt, 1 Fehler, 2 falscher Aufruf.
@@ -98,6 +104,18 @@ public static class ControlCommands
                 "prompts" when ParsePrompts(value) is { } prompts => ControlResult.Ok($"Töne & Sprachansagen: {PromptName(await service.SetAudioPromptModeAsync(prompts, cancellationToken))}"),
                 "rename" when value is not null => ControlResult.Ok($"Headset heißt jetzt „{await service.SetDeviceNameAsync(value, cancellationToken)}“."),
                 "connect" when value is not null => await ConnectAsync(service, value, cancellationToken),
+                "sidetone" when ParseLevel(value, 5) is { } sidetone =>
+                    ControlResult.Ok($"Transparenz bei Anrufen: {await service.SetSidetoneAsync(sidetone, cancellationToken)}"),
+                "transparency" when ParseLevel(value, 100) is { } level =>
+                    ControlResult.Ok($"Transparenzstufe: {await service.SetTransparencyLevelAsync(level, cancellationToken)}"),
+                "immersive" when ParseSwitch(value) is { } immersive =>
+                    ControlResult.Ok($"Raumklang: {OnOff(await service.SetImmersiveAudioAsync(immersive, cancellationToken))}"),
+                "headtracking" when ParseSwitch(value) is true && service.Store.Current.ImmersiveAudio != true =>
+                    ControlResult.Error("Nicht ausgeführt: Erst Raumklang einschalten (m4ctl immersive on)."),
+                "headtracking" when ParseSwitch(value) is { } tracking =>
+                    ControlResult.Ok($"Head Tracking: {OnOff(await service.SetHeadTrackingAsync(tracking, cancellationToken))}"),
+                "batteryprotect" when ParseSwitch(value) is { } protect =>
+                    ControlResult.Ok($"Akkuschutz: {OnOff(await service.SetBatteryProtectionAsync(protect, cancellationToken))}"),
                 _ => ControlResult.Usage($"Unbekannter Befehl oder Wert: {string.Join(' ', args)}\n\n{Help}"),
             };
         }
@@ -111,6 +129,8 @@ public static class ControlCommands
     public static string DescribeError(Exception exception) => exception switch
     {
         SettingNotAppliedException ex => ex.Message,
+        FeatureNotSupportedException ex when ex.Message.Contains("before head tracking", StringComparison.Ordinal) => "Erst Raumklang einschalten.",
+        FeatureNotSupportedException ex when ex.Message.Contains("Sound Personalization", StringComparison.Ordinal) => "Sound Personalization erst ausschalten.",
         HeadsetUnavailableException => "Headset nicht verbunden.",
         CommandNotAllowedException ex => $"nicht erlaubt ({ex.Message}).",
         GaiaErrorException ex => $"vom Headset abgelehnt{(ex.Reason is { } reason ? $" (Code 0x{reason:X2})" : string.Empty)}.",
@@ -214,6 +234,32 @@ public static class ControlCommands
         if (s.Behavior is { } b)
         {
             text.AppendLine(CultureInfo.InvariantCulture, $"Verhalten:     On-Head {OnOff(b.OnHeadDetection)}, Smart Pause {OnOff(b.SmartPause)}, Touch {OnOff(b.TouchControl)}, Anrufe annehmen {OnOff(b.AutoAnswer)}, Comfort Call {OnOff(b.ComfortCall)}");
+        }
+
+        if (s.TransparencyLevel is { } transparencyLevel)
+        {
+            text.AppendLine(CultureInfo.InvariantCulture, $"Transparenzstufe: {transparencyLevel}");
+        }
+
+        if (s.ImmersiveAudio is { } immersive)
+        {
+            text.AppendLine(CultureInfo.InvariantCulture, $"Raumklang:     {OnOff(immersive)}");
+        }
+
+        if (s.HeadTracking is { } tracking)
+        {
+            text.AppendLine(CultureInfo.InvariantCulture, $"Head Tracking: {OnOff(tracking)}");
+        }
+
+        if (s.BatteryProtection is { } protection)
+        {
+            text.AppendLine(CultureInfo.InvariantCulture, $"Akkuschutz:    {OnOff(protection)}");
+        }
+
+        // Nur wo der Core Sidetone freigibt – am M4 ist die Wirkung nicht bestätigt, ein bloßer Lesewert hilft niemandem.
+        if (s.Sidetone is { } sidetone && s.CanWrite(HeadsetControl.Sidetone))
+        {
+            text.AppendLine(CultureInfo.InvariantCulture, $"Transparenz bei Anrufen: {sidetone}");
         }
 
         if (s.AutoPowerOffSeconds is { } autoOff)
@@ -324,6 +370,9 @@ public static class ControlCommands
         ConnectionState.WaitingRetry => "getrennt, nächster Versuch folgt",
         _ => "getrennt",
     };
+
+    private static int? ParseLevel(string? value, int maximum) =>
+        int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var level) && level <= maximum ? level : null;
 
     private static string OnOff(bool? value) => value switch
     {

@@ -354,6 +354,26 @@ public sealed partial class Momentum4Service : IAsyncDisposable
     public Task<bool> SetAutoPauseAsync(bool on, CancellationToken cancellationToken) =>
         LegacyControlAsync(() => SetBooleanControlAsync(HeadsetBooleanControl.PauseOnTransparency, on, cancellationToken), snapshot => snapshot.Settings.PauseOnTransparency!.Value, state => state.AutoPauseOnTransparency!.Value, "Auto pause");
 
+    /// <summary>Immersive Audio (<c>0x3604</c>/<c>0x3605</c>), nur MOMENTUM 5 mit FW 6.21.5; nicht bei Sound Personalization.</summary>
+    public Task<bool> SetImmersiveAudioAsync(bool on, CancellationToken cancellationToken) =>
+        LegacyControlAsync(() => SetBooleanControlAsync(HeadsetBooleanControl.ImmersiveAudio, on, cancellationToken), snapshot => snapshot.Settings.ImmersiveAudio!.Value, state => state.ImmersiveAudio == true, "Immersive audio");
+
+    /// <summary>Head Tracking (<c>0x3602</c>/<c>0x3603</c>), nur MOMENTUM 5 und nur bei eingeschaltetem Immersive Audio.</summary>
+    public Task<bool> SetHeadTrackingAsync(bool on, CancellationToken cancellationToken) =>
+        LegacyControlAsync(() => SetBooleanControlAsync(HeadsetBooleanControl.HeadTracking, on, cancellationToken), snapshot => snapshot.Settings.HeadTracking!.Value, state => state.HeadTracking == true, "Head tracking");
+
+    /// <summary>Akkuschutz (<c>0x060A</c>/<c>0x060B</c>), nur MOMENTUM 5 – am M4 ungeprüft (<c>0x06xx</c> kann es offline nehmen).</summary>
+    public Task<bool> SetBatteryProtectionAsync(bool on, CancellationToken cancellationToken) =>
+        LegacyControlAsync(() => SetBooleanControlAsync(HeadsetBooleanControl.BatteryProtection, on, cancellationToken), snapshot => snapshot.Settings.BatteryProtection!.Value, state => state.BatteryProtection == true, "Battery protection");
+
+    /// <summary>Transparenz bei Anrufen (Sidetone, <c>0x0805</c>/<c>0x0806</c>), Stufe 0…5; freigegeben, wo der Core es erlaubt.</summary>
+    public Task<int> SetSidetoneAsync(int level, CancellationToken cancellationToken) =>
+        LegacyControlAsync(() => SetIntegerControlAsync(HeadsetIntegerControl.Sidetone, level, cancellationToken), snapshot => snapshot.Settings.Sidetone!.Value, state => state.Sidetone ?? 0, "Sidetone");
+
+    /// <summary>Transparenzstufe 0…100 (<c>0x1802</c>/<c>0x1803</c>), nur MOMENTUM 5 mit FW 6.21.5; koppelt an den ANC-Pegel.</summary>
+    public Task<int> SetTransparencyLevelAsync(int level, CancellationToken cancellationToken) =>
+        LegacyControlAsync(() => SetIntegerControlAsync(HeadsetIntegerControl.TransparencyLevel, level, cancellationToken), snapshot => snapshot.Settings.TransparencyLevel!.Value, state => state.TransparencyLevel ?? 0, "Transparency level");
+
     /// <summary>
     /// Gekoppeltes Gerät verbinden (docs/architecture.md §8.5). Vorher: Liste frisch lesen, am Platz
     /// <paramref name="index"/> muss <paramref name="expectedName"/> stehen, das Ziel darf nicht dieser PC sein und die
@@ -484,7 +504,17 @@ public sealed partial class Momentum4Service : IAsyncDisposable
         _gate = new FeatureGate(firmware, model);
         Store.Apply(new DeviceIdentified(new DeviceInfo(model, firmware)));
         _logger.LogInformation("Headset: {Model}, Firmware {Firmware}.", model, firmware);
-        if (_options.ReadSerialNumber)
+
+        // Ein MOMENTUM 5 läuft wie im am Gerät geprüften Linux-Ablauf: keine Seriennummer, keine Notification-Anmeldung,
+        // Refresh nur über den Shared-Snapshot (RefreshLockedAsync). Alles andere wurde am M5 nie gesendet.
+        var sharedSession = _gate.IsMomentum5;
+        _lastSharedRefresh = null;
+        if (sharedSession)
+        {
+            _logger.LogInformation("MOMENTUM 5: Sitzung ohne Notification-Anmeldung, Zustand per Snapshot im Abfrageintervall.");
+        }
+
+        if (_options.ReadSerialNumber && !sharedSession)
         {
             try
             {
@@ -496,7 +526,7 @@ public sealed partial class Momentum4Service : IAsyncDisposable
             }
         }
 
-        if (_options.RegisterNotifications)
+        if (_options.RegisterNotifications && !sharedSession)
         {
             await RegisterNotificationsAsync(session);
         }
@@ -612,6 +642,12 @@ public sealed partial class Momentum4Service : IAsyncDisposable
 
     private async Task RefreshLockedAsync(RefreshScope scope, CancellationToken session)
     {
+        if (_gate.IsMomentum5)
+        {
+            await RefreshSharedSnapshotAsync(scope, session);
+            return;
+        }
+
         await Step(RefreshScope.Battery, async () => Store.Apply(new BatteryChanged(await _client.GetBatteryLevelAsync(session))));
         await Step(RefreshScope.NoiseControl, async () => Store.Apply(new NoiseControlChanged(await _client.ReadNoiseControlAsync(session))));
         await Step(RefreshScope.NoiseControl, async () => Store.Apply(new AutoPauseChanged(await _client.ReadAutoPauseAsync(session))));
@@ -634,6 +670,10 @@ public sealed partial class Momentum4Service : IAsyncDisposable
         await Step(RefreshScope.Behavior, async () => Store.Apply(new DeviceNameChanged(await _client.ReadDeviceNameAsync(session))));
         await Step(RefreshScope.Behavior, async () => Store.Apply(new CodecChanged(await _client.ReadCodecAsync(session))));
         await Step(RefreshScope.Behavior, async () => Store.Apply(new PromptLanguageChanged(await _client.ReadPromptLanguageAsync(session))));
+
+        // Sidetone und die Schreibfreigaben kommen aus dem Shared-Snapshot (am M4 nur die verifizierten Reads 0x1801,
+        // 0x0806, 0x0601; der erste Aufruf einer Sitzung liest alles).
+        await Step(RefreshScope.Behavior, () => ReadControlSnapshotAsync(ControlGroup.Ancillary, session));
 
         if (scope == RefreshScope.All)
         {
@@ -668,8 +708,55 @@ public sealed partial class Momentum4Service : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Refresh am MOMENTUM 5: immer der vollständige Shared-Snapshot (wie der Linux-Host). Timeouts zählen wie bei den
+    /// M4-Schritten; ein Formatfehler beendet die Sitzung, weil ein kaputter Frame die M5-Sitzung entwertet.
+    /// </summary>
+    /// <summary>Kürzester Abstand zwischen zwei M5-Snapshots aus dem Polling (Linux-Standard).</summary>
+    public static readonly TimeSpan SharedRefreshMinimumInterval = TimeSpan.FromSeconds(30);
+
+    private DateTimeOffset? _lastSharedRefresh;
+
+    private async Task RefreshSharedSnapshotAsync(RefreshScope scope, CancellationToken session)
+    {
+        // Ein M5-Snapshot liest jedes Mal alles (~40 Requests). Wie der Linux-Standard höchstens alle 30 s; ein
+        // vollständiger Refresh (jeder FullRefreshEvery-te Tick oder auf Anfrage) läuft immer.
+        if (scope != RefreshScope.All && _lastSharedRefresh is { } last && _time.GetUtcNow() - last < SharedRefreshMinimumInterval)
+        {
+            return;
+        }
+
+        try
+        {
+            await ReadControlSnapshotAsync(ControlGroup.All, session);
+            _lastSharedRefresh = _time.GetUtcNow();
+            _consecutiveTimeouts = 0;
+        }
+        catch (TimeoutException ex)
+        {
+            _consecutiveTimeouts++;
+            _logger.LogWarning("M5-Snapshot ohne Antwort ({Count}/{Max}): {Message}", _consecutiveTimeouts, _options.MaxConsecutiveTimeouts, ex.Message);
+            if (_consecutiveTimeouts >= _options.MaxConsecutiveTimeouts)
+            {
+                throw;
+            }
+
+            return;
+        }
+
+        if (scope == RefreshScope.All)
+        {
+            Store.Apply(new FullRefreshCompleted(_time.GetUtcNow()));
+        }
+    }
+
     private void OnNotification(object? sender, GaiaFrame frame)
     {
+        if (_gate.IsMomentum5)
+        {
+            return; // am M5 nicht angemeldet und mit dem M4-Dispatcher nicht deutbar
+        }
+
         if (_dispatcher.Translate(frame) is { } deviceEvent)
         {
             ApplyPushed(deviceEvent);
@@ -687,6 +774,11 @@ public sealed partial class Momentum4Service : IAsyncDisposable
 
     private bool OnUnsolicitedResponse(GaiaFrame frame)
     {
+        if (_gate.IsMomentum5)
+        {
+            return false;
+        }
+
         if (_dispatcher.TranslateUnsolicitedResponse(frame) is not { } deviceEvent)
         {
             return false;

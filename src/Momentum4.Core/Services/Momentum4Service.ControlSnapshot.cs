@@ -271,7 +271,7 @@ public sealed partial class Momentum4Service
             writable.ToFrozenSet(), choices.ToFrozenDictionary(), Array.AsReadOnly(notes.Distinct().Take(32).ToArray()), name, charging, wear,
             personalization, Array.AsReadOnly(peers.ToArray()), capacity, peersAvailable, true);
         _controlSnapshot = snapshot;
-        PublishControlSnapshot(snapshot);
+        PublishControlSnapshot(snapshot, group);
         return snapshot;
     }
 
@@ -338,51 +338,92 @@ public sealed partial class Momentum4Service
         }
     }
 
-    private void PublishControlSnapshot(HeadsetControlSnapshot snapshot)
+    /// <summary>
+    /// Legt die Werte der tatsächlich gelesenen Gruppen im <see cref="StateStore"/> ab. Werte aus nicht gelesenen Gruppen
+    /// stammen aus dem vorigen Snapshot und können älter sein als ein Push oder Poll seitdem – sie werden nicht erneut
+    /// veröffentlicht.
+    /// </summary>
+    private void PublishControlSnapshot(HeadsetControlSnapshot snapshot, ControlGroup readGroups)
     {
-        if (snapshot.Battery is { } battery)
+        bool Read(ControlGroup part) => (readGroups & part) != 0;
+
+        if (readGroups == ControlGroup.All && snapshot.Battery is { } battery)
         {
             Store.Apply(new BatteryChanged(battery));
         }
 
-        if (snapshot.Settings is { AncEnabled: not null, AdaptiveAnc: not null, AncStrength: not null, AntiWind: not null, Transparency: not null })
+        if (Read(ControlGroup.Noise))
         {
-            Store.Apply(new NoiseControlChanged(NoiseState(snapshot.Settings)));
+            if (snapshot.Settings is { AncEnabled: not null, AdaptiveAnc: not null, AncStrength: not null, AntiWind: not null, Transparency: not null })
+            {
+                Store.Apply(new NoiseControlChanged(NoiseState(snapshot.Settings)));
+            }
+
+            Store.Apply(new TransparencyLevelChanged(snapshot.Settings.TransparencyLevel));
         }
 
-        if (snapshot.EqGainsDb.Count > 0 && snapshot.EqFrequenciesHz.Count == snapshot.EqGainsDb.Count)
+        if (Read(ControlGroup.Spatial))
+        {
+            Store.Apply(new SpatialAudioChanged(snapshot.Settings.ImmersiveAudio, snapshot.Settings.HeadTracking));
+        }
+
+        if (Read(ControlGroup.Equalizer) && snapshot.EqGainsDb.Count > 0 && snapshot.EqFrequenciesHz.Count == snapshot.EqGainsDb.Count)
         {
             Store.Apply(new EqualizerChanged(EqualizerStateOf(snapshot)));
         }
 
-        if (snapshot.Settings is { OnHeadDetection: { } detection, SmartPause: { } pause, AutoAnswer: { } answer, ComfortCall: { } comfort, TouchControls: { } touch })
+        if (Read(ControlGroup.Behavior))
         {
-            Store.Apply(new BehaviorChanged(new BehaviorState(detection, pause, answer, comfort, touch)));
+            if (snapshot.Settings is { OnHeadDetection: { } detection, SmartPause: { } pause, AutoAnswer: { } answer, ComfortCall: { } comfort, TouchControls: { } touch })
+            {
+                Store.Apply(new BehaviorChanged(new BehaviorState(detection, pause, answer, comfort, touch)));
+            }
+
+            if (snapshot.Settings.AudioPrompts is { } prompts)
+            {
+                Store.Apply(new PromptModeChanged((AudioPromptMode)prompts));
+            }
         }
 
-        if (snapshot.PeersAvailable)
+        if (Read(ControlGroup.Ancillary))
         {
-            Store.Apply(new MultipointChanged(MultipointStateOf(snapshot)));
+            if (snapshot.Settings.AutoPowerOff is { } seconds)
+            {
+                Store.Apply(new AutoPowerOffChanged(seconds));
+            }
+
+            if (snapshot.Settings.PauseOnTransparency is { } autoPause)
+            {
+                Store.Apply(new AutoPauseChanged(autoPause));
+            }
+
+            Store.Apply(new SidetoneChanged(snapshot.Settings.Sidetone));
+            Store.Apply(new BatteryProtectionChanged(snapshot.Settings.BatteryProtection));
         }
 
-        if (snapshot.DeviceName is { } name)
-        {
-            Store.Apply(new DeviceNameChanged(name));
-        }
+        Store.Apply(new ControlCapabilitiesChanged(snapshot.Writable, snapshot.Choices));
 
-        if (snapshot.Settings.AutoPowerOff is { } seconds)
+        if (Read(ControlGroup.Metadata))
         {
-            Store.Apply(new AutoPowerOffChanged(seconds));
-        }
+            if (snapshot.PeersAvailable)
+            {
+                Store.Apply(new MultipointChanged(MultipointStateOf(snapshot)));
+            }
 
-        if (snapshot.Settings.AudioPrompts is { } prompts)
-        {
-            Store.Apply(new PromptModeChanged((AudioPromptMode)prompts));
-        }
+            if (snapshot.DeviceName is { } name)
+            {
+                Store.Apply(new DeviceNameChanged(name));
+            }
 
-        if (snapshot.Settings.PauseOnTransparency is { } autoPause)
-        {
-            Store.Apply(new AutoPauseChanged(autoPause));
+            if (snapshot.Charging is { } charging)
+            {
+                Store.Apply(new ChargingChanged(charging));
+            }
+
+            if (snapshot.WearState is { } wear && Enum.IsDefined((WearState)wear))
+            {
+                Store.Apply(new WearStateChanged((WearState)wear));
+            }
         }
     }
 }
