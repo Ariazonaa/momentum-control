@@ -129,8 +129,11 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public string Version { get; } = "Version " + (typeof(SettingsViewModel).Assembly.GetName().Version?.ToString(3) ?? "?") + L.Get("UnofficialSuffix");
 
+    private string? _model;
+
     public void Apply(Momentum4State state)
     {
+        _model = state.Device?.ModelId;
         Headset = state.Device?.ModelId ?? "–";
         Firmware = state.Device?.Firmware.ToString() ?? "–";
         Bluetooth = (_host.Address is { } address ? address.ToAnonymizedString() + " · " : string.Empty) + state.Connection switch
@@ -158,6 +161,13 @@ public sealed partial class SettingsViewModel : ObservableObject
     private async Task RenameAsync()
     {
         var name = NewDeviceName.Trim();
+        var limit = ProductName.MaxNameBytes(_model);
+        if (System.Text.Encoding.UTF8.GetByteCount(name) > limit)
+        {
+            DeviceNameHint = L.Get("NameTooLong", limit);
+            return;
+        }
+
         if (_host.Service is not { } service || name.Length == 0 || name == CurrentDeviceName)
         {
             return;

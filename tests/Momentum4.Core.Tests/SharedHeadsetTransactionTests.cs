@@ -338,5 +338,23 @@ public sealed class SharedHeadsetTransactionTests
         Assert.Equal(0x1a00, Assert.Single(fixture.Writes).Command.Value);
     }
 
+    [Fact(Timeout = 15000)]
+    public async Task Ancillary_write_does_not_republish_stale_noise_state()
+    {
+        var fixture = new SharedHeadsetFixture();
+        await using var service = await fixture.StartAsync();
+        var before = await service.GetControlSnapshotAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(900, before.Settings.AutoPowerOff);
+
+        // Neuer Noise-Stand, wie ihn Polling oder ein Push nach dem letzten Snapshot liefern würde.
+        var newer = new NoiseControlState(true, false, 40, AntiWindMode.Off, false);
+        service.Store.Apply(new NoiseControlChanged(newer));
+
+        await service.SetIntegerControlAsync(HeadsetIntegerControl.AutoPowerOff, 1800, TestContext.Current.CancellationToken);
+
+        Assert.Equal(newer, service.Store.Current.NoiseControl);
+        Assert.Equal(1800, service.Store.Current.AutoPowerOffSeconds);
+    }
+
     private static SharedHeadsetFixture M4() => new() { Model = "M4AEBT", Firmware = [0, 3, 0, 37, 0, 3] };
 }

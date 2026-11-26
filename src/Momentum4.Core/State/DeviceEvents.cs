@@ -75,3 +75,19 @@ public sealed record PromptLanguageChanged(Protocol.Features.PromptLanguage Lang
 public sealed record AutoPauseChanged(bool On) : DeviceEvent;
 
 public sealed record FullRefreshCompleted(DateTimeOffset At) : DeviceEvent;
+
+/// <summary>Immersive Audio (<c>0x3605</c>) und Head Tracking (<c>0x3603</c>), nur MOMENTUM 5; <c>null</c> = unbekannt.</summary>
+public sealed record SpatialAudioChanged(bool? ImmersiveAudio, bool? HeadTracking) : DeviceEvent;
+
+/// <summary>Akkuschutz (<c>0x060B</c>), nur MOMENTUM 5.</summary>
+public sealed record BatteryProtectionChanged(bool? On) : DeviceEvent;
+
+/// <summary>Transparenzstufe 0…100 (<c>0x1803</c>), nur MOMENTUM 5 (FW 6.21.5).</summary>
+public sealed record TransparencyLevelChanged(int? Level) : DeviceEvent;
+
+/// <summary>Sidetone / Transparenz bei Anrufen 0…5 (<c>0x0806</c>).</summary>
+public sealed record SidetoneChanged(int? Level) : DeviceEvent;
+
+/// <summary>Was der Core laut letztem Shared-Snapshot schreiben würde, und die erlaubten Werte je Regler.</summary>
+public sealed record ControlCapabilitiesChanged(
+    IReadOnlySet<HeadsetControl> Writable, IReadOnlyDictionary<HeadsetIntegerControl, IReadOnlyList<int>> Choices) : DeviceEvent;

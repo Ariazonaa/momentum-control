@@ -163,7 +163,7 @@ public partial class App : Application
 
         if (!_host.Settings.TrayHintShown)
         {
-            _tray?.ShowBalloon(Localization.L.Get("TrayHintTitle"), Localization.L.Get("TrayHintBody"));
+            _tray?.ShowBalloon(Localization.L.Get("TrayHintTitle", Momentum4.Core.State.ProductName.For(_host.Service?.Store.Current.Device?.ModelId)), Localization.L.Get("TrayHintBody"));
             _host.SaveSettings(_host.Settings with { TrayHintShown = true });
         }
 

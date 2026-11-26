@@ -60,6 +60,12 @@ public sealed class StateStore
 /// <summary>Reine Funktion: alter Zustand + Event → neuer Zustand.</summary>
 public static class StateReducer
 {
+    // Mengen vergleicht ein record nur per Referenz; inhaltlich gleiche Freigaben sollen keinen StateChanged auslösen.
+    private static bool SameCapabilities(Momentum4State state, ControlCapabilitiesChanged e) =>
+        state.WritableControls is { } writable && writable.SetEquals(e.Writable)
+        && state.ControlChoices is { } choices && choices.Count == e.Choices.Count
+        && e.Choices.All(pair => choices.TryGetValue(pair.Key, out var values) && values.SequenceEqual(pair.Value));
+
     public static Momentum4State Apply(Momentum4State state, DeviceEvent deviceEvent) => deviceEvent switch
     {
         ConnectionChanged e => state with
@@ -67,7 +73,24 @@ public static class StateReducer
             Connection = e.State,
             LastError = e.State == ConnectionState.Connected ? null : e.Error ?? state.LastError,
         },
-        DeviceIdentified e => state with { Device = e.Device },
+        DeviceIdentified e when e.Device == state.Device => state,
+        DeviceIdentified e => state with
+        {
+            Device = e.Device,
+            ImmersiveAudio = null,
+            HeadTracking = null,
+            BatteryProtection = null,
+            TransparencyLevel = null,
+            Sidetone = null,
+            WritableControls = null,
+            ControlChoices = null,
+        },
+        SpatialAudioChanged e => state with { ImmersiveAudio = e.ImmersiveAudio, HeadTracking = e.HeadTracking },
+        BatteryProtectionChanged e => state with { BatteryProtection = e.On },
+        TransparencyLevelChanged e => state with { TransparencyLevel = e.Level },
+        SidetoneChanged e => state with { Sidetone = e.Level },
+        ControlCapabilitiesChanged e when SameCapabilities(state, e) => state,
+        ControlCapabilitiesChanged e => state with { WritableControls = e.Writable, ControlChoices = e.Choices },
         BatteryChanged e => state with { BatteryPercent = e.Percent },
         ChargingChanged e => state with { Charging = e.Charging },
         NoiseControlChanged e => state with { NoiseControl = e.State },

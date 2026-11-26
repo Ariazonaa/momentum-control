@@ -179,6 +179,94 @@ public sealed class ControlCommandsTests : IDisposable
         Assert.Null(result);
     }
 
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Sidetone_command_sets_and_reports_level()
+    {
+        var fixture = new SharedHeadsetFixture();
+        await using var service = await fixture.StartWindowsAsync();
+
+        var result = await ControlCommands.ExecuteAsync(["sidetone", "4"], service, null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("Transparenz bei Anrufen: 4", result.Output, StringComparison.Ordinal);
+        Assert.Equal(4, fixture.ExtraValues[0x0806]);
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task M5_switch_and_level_commands_confirm_the_readback()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = new SharedHeadsetFixture();
+        await using var service = await fixture.StartWindowsAsync();
+
+        var immersive = await ControlCommands.ExecuteAsync(["immersive", "on"], service, null, ct);
+        var tracking = await ControlCommands.ExecuteAsync(["headtracking", "on"], service, null, ct);
+        var protection = await ControlCommands.ExecuteAsync(["batteryprotect", "off"], service, null, ct);
+        var level = await ControlCommands.ExecuteAsync(["transparency", "40"], service, null, ct);
+
+        Assert.Equal((0, 0, 0, 0), (immersive.ExitCode, tracking.ExitCode, protection.ExitCode, level.ExitCode));
+        Assert.Contains("Raumklang: an", immersive.Output, StringComparison.Ordinal);
+        Assert.Contains("Head Tracking: an", tracking.Output, StringComparison.Ordinal);
+        Assert.Contains("Akkuschutz: aus", protection.Output, StringComparison.Ordinal);
+        Assert.Contains("Transparenzstufe: 40", level.Output, StringComparison.Ordinal);
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Status_lists_m5_values_when_known()
+    {
+        var fixture = new SharedHeadsetFixture();
+        await using var service = await fixture.StartWindowsAsync();
+
+        var result = await ControlCommands.ExecuteAsync(["status"], service, null, TestContext.Current.CancellationToken);
+
+        Assert.Contains("Raumklang:     aus", result.Output, StringComparison.Ordinal);
+        Assert.Contains("Head Tracking: aus", result.Output, StringComparison.Ordinal);
+        Assert.Contains("Akkuschutz:    an", result.Output, StringComparison.Ordinal);
+        Assert.Contains("Transparenzstufe: 100", result.Output, StringComparison.Ordinal);
+        Assert.Contains("Transparenz bei Anrufen: 3", result.Output, StringComparison.Ordinal);
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Status_omits_m5_values_on_m4()
+    {
+        await using var service = await StartAsync(TestContext.Current.CancellationToken);
+
+        var result = await ControlCommands.ExecuteAsync(["status"], service, null, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("Raumklang", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("Akkuschutz", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("Transparenzstufe", result.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("Transparenz bei Anrufen", result.Output, StringComparison.Ordinal); // am M4 gesperrt (Hörtest offen)
+    }
+
+    [Fact(Timeout = TestTimeoutMs)]
+    public async Task Headtracking_without_immersive_is_rejected_without_write()
+    {
+        var fixture = new SharedHeadsetFixture();
+        await using var service = await fixture.StartWindowsAsync();
+
+        var result = await ControlCommands.ExecuteAsync(["headtracking", "on"], service, null, TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("Raumklang", result.Output, StringComparison.Ordinal);
+        Assert.Empty(fixture.Writes);
+    }
+
+    [Theory(Timeout = TestTimeoutMs)]
+    [InlineData("9")]
+    [InlineData("-1")]
+    [InlineData("zwei")]
+    public async Task Out_of_range_sidetone_is_usage_error(string value)
+    {
+        var fixture = new SharedHeadsetFixture();
+        await using var service = await fixture.StartWindowsAsync();
+
+        var result = await ControlCommands.ExecuteAsync(["sidetone", value], service, null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Empty(fixture.Writes);
+    }
+
     private EqPresetStore Presets() => new(Path.Combine(_presetDirectory, "presets.json"), NullLogger.Instance);
 
     private async Task<Momentum4Service> StartAsync(CancellationToken cancellationToken)

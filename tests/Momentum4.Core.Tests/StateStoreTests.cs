@@ -27,6 +27,44 @@ public sealed class StateStoreTests
     }
 
     [Fact]
+    public void Identity_change_clears_extended_values_and_capabilities()
+    {
+        var store = new StateStore();
+        store.Apply(new DeviceIdentified(new DeviceInfo("M5AEBT Black", new FirmwareVersion(6, 21, 5))));
+        store.Apply(new SpatialAudioChanged(true, true));
+        store.Apply(new BatteryProtectionChanged(true));
+        store.Apply(new TransparencyLevelChanged(40));
+        store.Apply(new SidetoneChanged(2));
+        store.Apply(new ControlCapabilitiesChanged(new HashSet<HeadsetControl> { HeadsetControl.ImmersiveAudio },
+            new Dictionary<HeadsetIntegerControl, IReadOnlyList<int>> { [HeadsetIntegerControl.AntiWind] = [0, 1] }));
+
+        // Gleiche Identität (jeder Snapshot meldet sie erneut) lässt die Werte stehen.
+        Assert.False(store.Apply(new DeviceIdentified(new DeviceInfo("M5AEBT Black", new FirmwareVersion(6, 21, 5)))));
+        Assert.True(store.Current.CanWrite(HeadsetControl.ImmersiveAudio));
+
+        store.Apply(new DeviceIdentified(new DeviceInfo("M4AEBT Black", new FirmwareVersion(3, 38, 3))));
+        var state = store.Current;
+        Assert.Null(state.ImmersiveAudio);
+        Assert.Null(state.HeadTracking);
+        Assert.Null(state.BatteryProtection);
+        Assert.Null(state.TransparencyLevel);
+        Assert.Null(state.Sidetone);
+        Assert.Null(state.WritableControls);
+        Assert.Null(state.ControlChoices);
+        Assert.False(state.CanWrite(HeadsetControl.ImmersiveAudio));
+    }
+
+    [Fact]
+    public void Equal_capabilities_do_not_count_as_change()
+    {
+        var store = new StateStore();
+        var choices = new Dictionary<HeadsetIntegerControl, IReadOnlyList<int>> { [HeadsetIntegerControl.AntiWind] = [0, 1] };
+        Assert.True(store.Apply(new ControlCapabilitiesChanged(new HashSet<HeadsetControl> { HeadsetControl.Sidetone }, choices)));
+        Assert.False(store.Apply(new ControlCapabilitiesChanged(new HashSet<HeadsetControl> { HeadsetControl.Sidetone },
+            new Dictionary<HeadsetIntegerControl, IReadOnlyList<int>> { [HeadsetIntegerControl.AntiWind] = [0, 1] })));
+    }
+
+    [Fact]
     public void Equal_lists_do_not_count_as_change()
     {
         var store = new StateStore();

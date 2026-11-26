@@ -196,7 +196,7 @@ public sealed partial class Momentum4Service
             EnsureActionPossible("Rename", [CommandCatalog.SetLocalName]);
             var before = await ReadControlSnapshotAsync(ControlGroup.Metadata, ct);
             RequireControl(before, HeadsetControl.Rename);
-            var payload = SharedHeadsetCodec.EncodeName(name, _gate.IsMomentum5 ? 16 : 30);
+            var payload = SharedHeadsetCodec.EncodeName(name, ProductName.MaxNameBytes(before.Model));
             name = System.Text.Encoding.UTF8.GetString(payload);
             if (before.DeviceName == name)
             {

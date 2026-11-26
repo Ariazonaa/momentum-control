@@ -5,7 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:Momentum4.App.ViewModels"
     xmlns:loc="using:Momentum4.App.Localization"
-    Title="MOMENTUM 4">
+    Title="MOMENTUM Control">
 
     <!--  AMOLED: schwarzer Hintergrund statt Mica; Kartenstil in App.xaml  -->
     <Grid Background="{StaticResource AmoledBackgroundBrush}">
@@ -26,7 +26,7 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Spacing="2">
-                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="MOMENTUM 4" />
+                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="{x:Bind ViewModel.ProductTitle, Mode=OneWay}" />
                 <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" />
                 <TextBlock
                     Foreground="{ThemeResource TextFillColorTertiaryBrush}"
@@ -216,10 +216,19 @@
                                 StepFrequency="1"
                                 Value="{x:Bind ViewModel.NoiseControl.Strength, Mode=TwoWay}" />
                         </StackPanel>
+                        <!--  Nur MOMENTUM 5 (FW 6.21.5): eigene Transparenzstufe, bei ANC aus gesperrt  -->
+                        <Slider
+                            Header="{loc:Loc Key=TransparencyLevel}"
+                            IsEnabled="{x:Bind ViewModel.NoiseControl.TransparencyLevelEnabled, Mode=OneWay}"
+                            Maximum="100"
+                            Minimum="0"
+                            StepFrequency="1"
+                            Value="{x:Bind ViewModel.NoiseControl.TransparencyLevel, Mode=TwoWay}"
+                            Visibility="{x:Bind ViewModel.NoiseControl.ShowTransparencyLevel, Mode=OneWay}" />
                         <ComboBox
                             MinWidth="160"
                             Header="{loc:Loc Key=AntiWind}"
-                            ItemsSource="{x:Bind ViewModel.NoiseControl.AntiWindOptions}"
+                            ItemsSource="{x:Bind ViewModel.NoiseControl.AntiWindOptions, Mode=OneWay}"
                             SelectedIndex="{x:Bind ViewModel.NoiseControl.AntiWindIndex, Mode=TwoWay}" />
                         <ToggleSwitch OffContent="{loc:Loc Key=StateOff}" OnContent="{loc:Loc Key=StateOn}" Header="{loc:Loc Key=AutoPauseTransparency}" IsOn="{x:Bind ViewModel.NoiseControl.AutoPause, Mode=TwoWay}" />
                     </StackPanel>
@@ -304,6 +313,23 @@
                     </StackPanel>
                 </Border>
 
+                <!--  Raumklang: nur MOMENTUM 5 (FW 6.21.5); Head Tracking nur mit Immersive Audio  -->
+                <Border
+                    IsHitTestVisible="{x:Bind ViewModel.Spatial.IsAvailable, Mode=OneWay}"
+                    Style="{StaticResource Card}"
+                    Visibility="{x:Bind ViewModel.Spatial.IsVisible, Mode=OneWay}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="{loc:Loc Key=SpatialTitle}" />
+                        <ToggleSwitch OffContent="{loc:Loc Key=StateOff}" OnContent="{loc:Loc Key=StateOn}" Header="{loc:Loc Key=ImmersiveAudio}" IsEnabled="{x:Bind ViewModel.Spatial.ImmersiveEnabled, Mode=OneWay}" IsOn="{x:Bind ViewModel.Spatial.ImmersiveAudio, Mode=TwoWay}" />
+                        <ToggleSwitch OffContent="{loc:Loc Key=StateOff}" OnContent="{loc:Loc Key=StateOn}" Header="{loc:Loc Key=HeadTracking}" IsEnabled="{x:Bind ViewModel.Spatial.HeadTrackingEnabled, Mode=OneWay}" IsOn="{x:Bind ViewModel.Spatial.HeadTracking, Mode=TwoWay}" />
+                        <TextBlock
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind ViewModel.Spatial.Hint, Mode=OneWay}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
                 <!--  Verhalten: nur Touch meldet sich selbst (0x1687), der Rest kommt per Lesen (protocol.md §8)  -->
                 <Border
                     IsHitTestVisible="{x:Bind ViewModel.Behavior.IsAvailable, Mode=OneWay}"
@@ -316,6 +342,14 @@
                         <ToggleSwitch OffContent="{loc:Loc Key=StateOff}" OnContent="{loc:Loc Key=StateOn}" Header="{loc:Loc Key=TouchControls}" IsOn="{x:Bind ViewModel.Behavior.TouchControl, Mode=TwoWay}" />
                         <ToggleSwitch OffContent="{loc:Loc Key=StateOff}" OnContent="{loc:Loc Key=StateOn}" Header="{loc:Loc Key=AutoAnswer}" IsOn="{x:Bind ViewModel.Behavior.AutoAnswer, Mode=TwoWay}" />
                         <ToggleSwitch OffContent="{loc:Loc Key=StateOff}" OnContent="{loc:Loc Key=StateOn}" Header="{loc:Loc Key=ComfortCall}" IsOn="{x:Bind ViewModel.Behavior.ComfortCall, Mode=TwoWay}" />
+                        <ComboBox
+                            MinWidth="200"
+                            Margin="0,4,0,0"
+                            Header="{loc:Loc Key=CallTransparency}"
+                            ItemsSource="{x:Bind ViewModel.Behavior.SidetoneOptions}"
+                            SelectedIndex="{x:Bind ViewModel.Behavior.SidetoneIndex, Mode=TwoWay}"
+                            Visibility="{x:Bind ViewModel.Behavior.ShowSidetone, Mode=OneWay}" />
+                        <ToggleSwitch OffContent="{loc:Loc Key=StateOff}" OnContent="{loc:Loc Key=StateOn}" Header="{loc:Loc Key=BatteryProtection}" IsOn="{x:Bind ViewModel.Behavior.BatteryProtection, Mode=TwoWay}" Visibility="{x:Bind ViewModel.Behavior.ShowBatteryProtection, Mode=OneWay}" />
                         <ComboBox
                             MinWidth="200"
                             Margin="0,4,0,0"

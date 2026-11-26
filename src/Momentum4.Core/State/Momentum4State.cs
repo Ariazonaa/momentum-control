@@ -154,8 +154,21 @@ public sealed record Momentum4State(
     BluetoothCodec? Codec = null,
     string? SerialNumber = null,
     PromptLanguage? PromptLanguage = null,
-    bool? AutoPauseOnTransparency = null)
+    bool? AutoPauseOnTransparency = null,
+    bool? ImmersiveAudio = null,
+    bool? HeadTracking = null,
+    bool? BatteryProtection = null,
+    int? TransparencyLevel = null,
+    int? Sidetone = null,
+    IReadOnlySet<HeadsetControl>? WritableControls = null,
+    IReadOnlyDictionary<HeadsetIntegerControl, IReadOnlyList<int>>? ControlChoices = null)
 {
+    /// <summary>
+    /// Ob der Core diese Einstellung für das verbundene Gerät schreiben würde (aus dem letzten Shared-Snapshot:
+    /// Modell-/Firmware-Gate und gelesener Wert). Unbekannt heißt nein.
+    /// </summary>
+    public bool CanWrite(HeadsetControl control) => WritableControls?.Contains(control) == true;
+
     /// <summary>
     /// Werte für „Automatisch ausschalten“, die belegt sind: 0 = nie, 15 min (eigenes Gerät), 30 und 60 min ([DS]: so
     /// liest das Headset die Stufen der Smart-Control-App). Andere Werte schreibt die App nicht.

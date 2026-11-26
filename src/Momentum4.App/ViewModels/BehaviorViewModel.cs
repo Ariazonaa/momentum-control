@@ -27,6 +27,24 @@ public sealed partial class BehaviorViewModel(IActionRunner run) : ObservableObj
 
     public List<string> PromptOptions { get; } = [L.Get("PromptTonesVoice"), L.Get("PromptTonesOnly"), L.Get("PromptOff")];
 
+    /// <summary>Transparenz bei Anrufen (Sidetone) 0…5; Eintrag 0 heißt „Aus“.</summary>
+    public List<string> SidetoneOptions { get; } = [L.Get("CallTransparencyOff"), "1", "2", "3", "4", "5"];
+
+    private int? _lastSidetone;
+    private bool? _lastBatteryProtection;
+
+    [ObservableProperty]
+    public partial bool ShowSidetone { get; set; }
+
+    [ObservableProperty]
+    public partial int SidetoneIndex { get; set; } = -1;
+
+    [ObservableProperty]
+    public partial bool ShowBatteryProtection { get; set; }
+
+    [ObservableProperty]
+    public partial bool BatteryProtection { get; set; }
+
     [ObservableProperty]
     public partial int PromptIndex { get; set; } = -1;
 
@@ -57,14 +75,21 @@ public sealed partial class BehaviorViewModel(IActionRunner run) : ObservableObj
     [ObservableProperty]
     public partial bool TouchControl { get; set; }
 
-    public void Apply(BehaviorState? state, int? autoOffSeconds, AudioPromptMode? prompts, bool connected)
+    public void Apply(BehaviorState? state, int? autoOffSeconds, AudioPromptMode? prompts, bool connected, Momentum4State? full = null)
     {
         _last = state;
         _lastAutoOff = autoOffSeconds;
         _lastPrompts = prompts;
+        _lastSidetone = full?.Sidetone;
+        _lastBatteryProtection = full?.BatteryProtection;
         _applying = true;
         try
         {
+            // Nur zeigen, was der Core für dieses Gerät schreiben würde (am M4 Sidetone erst nach einem Hardware-Test).
+            ShowSidetone = full is not null && full.CanWrite(HeadsetControl.Sidetone) && full.Sidetone is not null;
+            SidetoneIndex = ShowSidetone ? full!.Sidetone!.Value : -1;
+            ShowBatteryProtection = full is not null && full.CanWrite(HeadsetControl.BatteryProtection) && full.BatteryProtection is not null;
+            BatteryProtection = full?.BatteryProtection == true;
             PromptIndex = prompts is { } mode ? Array.IndexOf(PromptOrder, mode) : -1;
             AutoOffIndex = autoOffSeconds is { } seconds ? IndexOf(seconds) : -1;
             AutoOffHint = autoOffSeconds is { } other && IndexOf(other) < 0 ? L.Get("AutoOffOther", other % 60 == 0 ? $"{other / 60} min" : $"{other} s") : string.Empty;
@@ -112,6 +137,26 @@ public sealed partial class BehaviorViewModel(IActionRunner run) : ObservableObj
 
         var seconds = Momentum4State.AutoPowerOffChoices[value];
         _ = run.RunAsync(L.Get("ActAutoOff", AutoOffOptions[value]), (service, ct) => service.SetAutoPowerOffAsync(seconds, ct));
+    }
+
+    partial void OnSidetoneIndexChanged(int value)
+    {
+        if (_applying || value < 0 || value >= SidetoneOptions.Count || _lastSidetone == value)
+        {
+            return;
+        }
+
+        _ = run.RunAsync(L.Get("ActSidetone", SidetoneOptions[value]), (service, ct) => service.SetSidetoneAsync(value, ct));
+    }
+
+    partial void OnBatteryProtectionChanged(bool value)
+    {
+        if (_applying || _lastBatteryProtection is null || _lastBatteryProtection == value)
+        {
+            return;
+        }
+
+        _ = run.RunAsync(L.Get("ActBatteryProtection", L.Get(value ? "StateOn" : "StateOff")), (service, ct) => service.SetBatteryProtectionAsync(value, ct));
     }
 
     private static int IndexOf(int seconds)
