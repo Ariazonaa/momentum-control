@@ -48,6 +48,26 @@ internal sealed class DonglePeer : IDongleLeaseProvider, IDongleLease
     public ValueTask<IHidEndpoint> OpenAsync(DongleTarget target, HidInterface kind, TimeSpan timeout, CancellationToken cancellationToken)
     { cancellationToken.ThrowIfCancellationRequested(); var endpoint = new Endpoint(this, kind); Endpoints.Add(endpoint); OnOpen?.Invoke(); return ValueTask.FromResult<IHidEndpoint>(endpoint); }
     public ValueTask DisposeAsync() { LeaseDisposed = true; return ValueTask.CompletedTask; }
+    /// <summary>Fake-Zeitpunkt, zu dem ein Lesen mit <see cref="StallRead"/> zu hängen begann (Timeout ist dann schon gesetzt).</summary>
+    public long? StallStarted;
+
+    public double StallElapsed => StallStarted is { } stall ? Clock.GetElapsedTime(stall).TotalSeconds : double.NaN;
+
+    /// <summary>
+    /// Für Budget-Tests: Dreht die Uhr erst, wenn das hängende Lesen begonnen hat, und nur bis <paramref name="budget"/>
+    /// danach – dann wartet es in Echtzeit. So misst <see cref="StallElapsed"/> die Implementierung und nicht, wie viele
+    /// Schleifenrunden unter CPU-Last zwischen Timeout und Fortsetzung liefen.
+    /// </summary>
+    public async Task<T> CompleteAfterStall<T>(Task<T> task, TimeSpan budget)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        for (var index = 0; index < 2000 && !task.IsCompleted && StallStarted is null; index++) { await Task.Delay(1, ct); }
+        while (!task.IsCompleted && StallStarted is { } stall && Clock.GetElapsedTime(stall) < budget) { Clock.Advance(TimeSpan.FromMilliseconds(100)); await Task.Yield(); }
+        await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(10), ct));
+        Assert.True(task.IsCompleted, $"Operation did not finish once the {budget.TotalSeconds} s budget had passed.");
+        return await task;
+    }
+
     public async Task<T> Complete<T>(Task<T> task)
     {
         for (var index = 0; index < 7000 && !task.IsCompleted; index++) { Clock.Advance(TimeSpan.FromMilliseconds(100)); await Task.Delay(5, TestContext.Current.CancellationToken); }
@@ -68,7 +88,7 @@ internal sealed class DonglePeer : IDongleLeaseProvider, IDongleLease
         {
             peer.ReadTimeouts.Add(timeout); if (kind == HidInterface.Upgrade) peer.UpgradeReads++; cancellationToken.ThrowIfCancellationRequested();
             if (peer.EventFlood) { peer.Clock.Advance(TimeSpan.FromMilliseconds(50)); return ControlReply(6, [3], 0xfc); }
-            if (peer.StallRead) await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            if (peer.StallRead) { peer.StallStarted ??= peer.Clock.GetTimestamp(); await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken); }
             if (peer.RemoveOnSetter && peer.Setters > 0 && kind == HidInterface.Control) { peer.RemoveOnSetter = false; throw new DongleDisconnectedException("removed"); }
             if (replies.Count == 0) throw new DongleDisconnectedException("BTD 700 disconnected"); return replies.Dequeue();
         }

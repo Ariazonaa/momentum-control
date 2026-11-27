@@ -8,6 +8,7 @@ class Device:
     name: str
     path: str
     connected: bool
+    battery: int | None = None  # org.bluez.Battery1, unabhängig von der GAIA-Steuerverbindung
 
 
 @dataclass(frozen=True)

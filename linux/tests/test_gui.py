@@ -173,6 +173,116 @@ raise SystemExit(gui.main(['momentum-control']))
         self.connect()
         return value
 
+    def forward(self, argv):
+        reply = {}
+        thread = threading.Thread(target=lambda: reply.update(self.window.control_request(argv)))
+        thread.start()
+        self.wait(lambda: not thread.is_alive())
+        return reply
+
+    def test_forwarded_cli_command_uses_the_gui_session(self):
+        self.configure_noise()
+        creates = sum(1 for call in self.calls if call[0] == 'create')
+        reply = self.forward(['set', 'anc_enabled', 'off'])
+        self.assertEqual(reply['exit'], 0, reply)
+        self.assertTrue(any(call[0] == 'write' and call[1] == 'anc_enabled' and call[2] is False for call in self.calls))
+        self.assertEqual(sum(1 for call in self.calls if call[0] == 'create'), creates)
+        self.assertIs(self.window.snapshot.settings['anc_enabled'], False)
+
+    def test_forwarding_falls_back_without_a_gui_session(self):
+        self.assertEqual(self.forward(['status']), {'fallback': True})
+
+    def test_forwarded_invalid_arguments_are_a_usage_error(self):
+        self.configure_noise()
+        reply = self.forward(['set', 'sidetone', '9'])
+        self.assertEqual(reply['exit'], 2)
+        self.assertFalse(any(call[0] == 'write' for call in self.calls))
+
+    def test_forwarded_command_the_session_cannot_run_keeps_the_connection(self):
+        self.configure_noise()
+        reply = self.forward(['set', 'immersive_audio', 'on'])
+        self.assertEqual(reply['exit'], 1, reply)
+        self.assertIn('immersive_audio', reply['stderr'])
+        self.assertFalse(any(call[0] == 'write' for call in self.calls))
+        self.assertIsNotNone(self.window.snapshot)
+
+    def test_forwarded_status_keeps_location_sampling(self):
+        from unittest.mock import patch
+        self.configure_noise()
+        with patch.object(self.window, 'cancel_location') as cancel:
+            self.assertEqual(self.forward(['status'])['exit'], 0)
+        cancel.assert_not_called()
+
+    def test_closing_during_a_forwarded_write_reports_failure_instead_of_fallback(self):
+        self.configure_noise()
+        self.mode = 'writeblock'
+        reply = {}
+        thread = threading.Thread(target=lambda: reply.update(self.window.control_request(['set', 'anc_enabled', 'off'])))
+        thread.start()
+        self.wait(self.started.is_set)  # pumpt Qt-Ereignisse, damit die GUI den Befehl annimmt
+        self.window.close()
+        self.wait(lambda: not thread.is_alive())
+        self.assertEqual(reply.get('exit'), 1, reply)
+        self.assertNotIn('fallback', reply)
+
+    def test_tray_click_opens_quick_panel_with_current_state(self):
+        from PySide6.QtWidgets import QSystemTrayIcon
+        self.configure_noise()
+        self.window.tray_activated(QSystemTrayIcon.ActivationReason.Trigger)
+        panel = self.window.quick_panel
+        self.wait(lambda: panel.isVisible())
+        self.assertTrue(panel.mode_buttons['anc'].isChecked())
+        self.assertTrue(panel.mode_buttons['off'].isEnabled())
+        self.assertIn('71', panel.battery.text())
+        self.assertTrue(panel.strength.isVisibleTo(panel))
+        self.assertEqual(panel.strength.value(), 80)
+        self.window.tray_activated(QSystemTrayIcon.ActivationReason.Trigger)
+        self.wait(lambda: not panel.isVisible())
+
+    def test_quick_panel_mode_button_submits_mode(self):
+        from PySide6.QtWidgets import QSystemTrayIcon
+        self.configure_noise()
+        self.window.tray_activated(QSystemTrayIcon.ActivationReason.Trigger)
+        self.window.quick_panel.mode_buttons['off'].click()
+        self.wait(lambda: not self.window.busy)
+        self.assertTrue(any(call[0] == 'mode' and call[1] == 'off' for call in self.calls))
+
+    def test_quick_panel_strength_commits_inverse_level_on_release(self):
+        from PySide6.QtWidgets import QSystemTrayIcon
+        self.configure_noise()
+        self.window.tray_activated(QSystemTrayIcon.ActivationReason.Trigger)
+        panel = self.window.quick_panel
+        panel.strength.setValue(70)
+        self.assertFalse(any(call[0] == 'write' for call in self.calls))
+        panel.strength.sliderReleased.emit()
+        self.wait(lambda: not self.window.busy)
+        self.assertTrue(any(call[0] == 'write' and call[1] == 'anc_strength' and call[2] == 30 for call in self.calls))
+
+    def test_quick_panel_without_headset_offers_only_opening_the_app(self):
+        from PySide6.QtWidgets import QSystemTrayIcon
+        self.window.tray_activated(QSystemTrayIcon.ActivationReason.Trigger)
+        panel = self.window.quick_panel
+        self.wait(lambda: panel.isVisible())
+        self.assertFalse(any(button.isEnabled() for button in panel.mode_buttons.values()))
+        self.assertFalse(panel.strength.isVisibleTo(panel))
+        panel.open_button.click()
+        self.wait(lambda: not panel.isVisible() and self.window.isVisible())
+
+    def test_tray_double_click_opens_the_window(self):
+        from PySide6.QtWidgets import QSystemTrayIcon
+        self.window.hide()
+        self.window.tray_activated(QSystemTrayIcon.ActivationReason.DoubleClick)
+        self.wait(lambda: self.window.isVisible())
+        self.assertFalse(self.window.quick_panel.isVisible())
+
+    def test_disconnected_headset_shows_bluez_battery(self):
+        self.device.battery = 55
+        self.window.selection_changed()
+        self.assertEqual(self.window.battery.text(), '55 % (Bluetooth)')
+        self.device.battery = None
+        self.window.selection_changed()
+        self.assertEqual(self.window.battery.text(), '—')
+
     def test_visible_noise_modes_forward_one_shared_operation(self):
         self.configure_noise()
         for mode in ('transparency', 'anc', 'adaptive', 'off'):

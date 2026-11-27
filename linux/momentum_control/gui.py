@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import threading
 import time
@@ -23,6 +25,9 @@ from .preferences import AppData, Preferences, EqPreset, PreferenceStore, Prefer
 from .desktop import set_autostart, autostart_enabled, export_diagnostics, _OPERATION_NAMES
 from .updates import check_project_release
 from .i18n import translate
+from . import cli as cli_commands
+from . import control
+from .quick_panel import QuickPanel
 from .sound_zones import ZoneData, ZoneStore, SoundZone, ZoneTracker, ZoneError
 
 
@@ -45,6 +50,16 @@ class Request:
     band: int | None = None
     payload: object = None
     eq_topology: tuple | None = None
+
+
+class _CliRequest:
+    """A forwarded momentumctl command waiting for the UI thread (see control.py)."""
+
+    def __init__(self, argv):
+        self.argv = argv
+        self.event = threading.Event()
+        self.reply = None
+        self.submitted = False
 
 
 @dataclass(frozen=True)
@@ -282,6 +297,13 @@ class Worker(QObject):
                     result = self.client.rename(request.payload)
                 else:
                     result = self.client.connect_peer(request.payload)
+            elif request.action == 'cli':
+                if self.client is None:
+                    raise RuntimeError('Connect to a headset first')
+                _, args, value = request.payload
+                output = io.StringIO()
+                snapshot = cli_commands.run_headset(args, value, self.client, output)
+                result = (output.getvalue(), snapshot)
             elif request.action == 'write':
                 if self.client is None:
                     raise RuntimeError('Connect to a headset first')
@@ -540,6 +562,7 @@ def mode_available(snapshot, mode):
 
 class MainWindow(QMainWindow):
     requested = Signal(object)
+    cli_requested = Signal(object)
     location_cleanup_requested = Signal(int)
 
     def __init__(self, discover=None, client_factory=None, dongle_services=None,
@@ -979,10 +1002,20 @@ class MainWindow(QMainWindow):
         self.thread.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.worker_stopped)
         self.thread.start()
+        # momentumctl hands headset commands to this window while it holds the connection (control.py).
+        self.cli_pending = set()
+        self.cli_requested.connect(self.handle_cli_request, Qt.ConnectionType.QueuedConnection)
+        self.control_server = None
+        if default_services:
+            try:
+                self.control_server = control.ControlServer(self.control_request)
+            except OSError:
+                self.control_server = None
         self.render_navigation()
         self.update_enabled()
         self.tray = QSystemTrayIcon(self.windowIcon(), self)
-        self.tray.activated.connect(lambda reason: self.open_window())
+        self.quick_panel = QuickPanel(self)
+        self.tray.activated.connect(self.tray_activated)
         self.tray_menu = QMenu(self)
         self.tray_menu.addAction(self.tr('Open'), self.open_window)
         self.tray_mode_actions = {}
@@ -1660,6 +1693,15 @@ class MainWindow(QMainWindow):
         else:
             self.show()
 
+    @Slot(object)
+    def tray_activated(self, reason):
+        """Left-click: quick panel (like Windows); double-click: main window; the context menu stays on right-click."""
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            self.quick_panel.toggle()
+        elif reason in (QSystemTrayIcon.ActivationReason.DoubleClick, QSystemTrayIcon.ActivationReason.MiddleClick):
+            self.quick_panel.hide()
+            self.open_window()
+
     def open_window(self):
         self.show()
         self.raise_()
@@ -1905,8 +1947,13 @@ class MainWindow(QMainWindow):
         self.snapshot = None
         self.status.setText('Headset controls — disconnected')
         self.detail.setText('Select Connect controls to read this headset.' if self.device_picker.currentData() is not None else 'Pair a headset with PC Bluetooth for controls.')
-        self.battery.setText('—')
+        self.battery.setText(self.bluetooth_battery_text())
         self.update_enabled()
+
+    def bluetooth_battery_text(self):
+        """Ohne Steuerverbindung: Akku, den BlueZ für das gewählte Headset meldet (wie „(Windows)“ unter Windows)."""
+        battery = getattr(self.device_picker.currentData(), 'battery', None)
+        return '—' if battery is None else f'{battery} % (Bluetooth)'
 
     @staticmethod
     def edit_key(request):
@@ -1953,7 +2000,7 @@ class MainWindow(QMainWindow):
         device = self.device_picker.currentData()
         if action == 'connect' and device is None:
             return False
-        if action in ('refresh', 'poll', 'write', 'mode', 'preset', 'rename', 'connect-peer') and self.snapshot is None:
+        if action in ('refresh', 'poll', 'write', 'mode', 'preset', 'rename', 'connect-peer', 'cli') and self.snapshot is None:
             return False
         if action == 'location-sample' and (not isinstance(payload, LocationIntent) or payload.location_generation != self.location_generation):
             return False
@@ -2002,7 +2049,7 @@ class MainWindow(QMainWindow):
         return True
 
     def start_request(self, request):
-        if request.action not in ('write', 'mode', 'poll', 'location-sample'):
+        if request.action not in ('write', 'mode', 'poll', 'location-sample', 'cli'):
             self.cancel_location()
         if request.action == 'location-sample':
             self.location_active = True
@@ -2113,6 +2160,13 @@ class MainWindow(QMainWindow):
         self.record_event(request.action, error)
         self.busy = False
         self.active_request = None
+        if request.action == 'cli':
+            holder = request.payload[0]
+            if error:
+                self.finish_cli(holder, {'exit': 1, 'stdout': '', 'stderr': f'momentumctl: {error}\n'})
+            else:
+                self.finish_cli(holder, {'exit': 0, 'stdout': result[0], 'stderr': ''})
+                result = result[1]
         if request.action == 'location-sample':
             self.complete_location(request.payload, result, error)
             self.drain_pending_edits()
@@ -2172,7 +2226,7 @@ class MainWindow(QMainWindow):
             self.snapshot = None
             self.status.setText('Headset controls — disconnected')
             self.detail.setText('Connection unavailable')
-            self.battery.setText('—')
+            self.battery.setText(self.bluetooth_battery_text())
             self.message.setText(error)
             self.message.show()
             self.gear.setChecked(True)
@@ -2424,6 +2478,8 @@ class MainWindow(QMainWindow):
         self.apply_noise_state()
 
     def update_enabled(self):
+        if getattr(self, 'quick_panel', None) is not None and self.quick_panel.isVisible():
+            self.quick_panel.refresh()
         ready = not self.busy and not self.closing
         editable = not self.closing and (not self.busy or self.active_request is not None
                     and self.active_request.action in ('write', 'mode', 'poll', 'location-sample'))
@@ -2509,6 +2565,40 @@ class MainWindow(QMainWindow):
             self.scroll.setFocus(Qt.FocusReason.OtherFocusReason)
         widget.setEnabled(enabled)
 
+    def control_request(self, argv):
+        """Runs on the control server thread: hand the command to the UI thread and wait for its reply."""
+        holder = _CliRequest(list(argv))
+        self.cli_requested.emit(holder)
+        if not holder.event.wait(125):
+            return {'exit': 1, 'stdout': '', 'stderr': 'momentumctl: the running app did not finish in time\n'}
+        return holder.reply
+
+    def finish_cli(self, holder, reply):
+        self.cli_pending.discard(holder)
+        holder.reply = reply
+        holder.event.set()
+
+    @Slot(object)
+    def handle_cli_request(self, holder):
+        self.cli_pending.add(holder)
+        errors = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(errors):
+                args, value = cli_commands.parse_args(holder.argv)
+        except SystemExit as exit_request:
+            code = exit_request.code if type(exit_request.code) is int else 2
+            return self.finish_cli(holder, {'exit': code, 'stdout': '', 'stderr': errors.getvalue()})
+        device = self.device_picker.currentData()
+        if (self.closing or self.snapshot is None or args.command not in cli_commands.FORWARDABLE
+                or (args.device and (device is None or device.address.upper() != args.device.upper()))):
+            return self.finish_cli(holder, {'fallback': True})
+        problem = cli_commands.precheck(args, value, self.snapshot)
+        if problem is not None:
+            return self.finish_cli(holder, {'exit': 1, 'stdout': '', 'stderr': f'momentumctl: {problem}\n'})
+        if self.busy or self.updating or not self.submit('cli', payload=(holder, args, value)):
+            return self.finish_cli(holder, {'busy': True})
+        holder.submitted = True
+
     def closeEvent(self, event: QCloseEvent):
         if not self.thread.isRunning():
             event.accept()
@@ -2526,6 +2616,12 @@ class MainWindow(QMainWindow):
         self.timer.stop()
         self.cancel_location()
         self.closing = True
+        self.quick_panel.hide()
+        if self.control_server is not None:
+            self.control_server.close()
+        for holder in list(self.cli_pending):
+            self.finish_cli(holder, {'exit': 1, 'stdout': '', 'stderr': 'momentumctl: the app closed while running the command; check the headset before retrying\n'}
+                            if holder.submitted else {'fallback': True})
         self.clear_pending_edits()
         self.message.setText('Closing Bluetooth connection…')
         self.update_enabled()

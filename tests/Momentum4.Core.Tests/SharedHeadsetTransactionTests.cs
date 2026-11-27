@@ -108,20 +108,34 @@ public sealed class SharedHeadsetTransactionTests
         await using var service = await fixture.StartAsync();
         var before = await service.GetControlSnapshotAsync(TestContext.Current.CancellationToken);
         var peer = before.Peers[1];
+        var ct = TestContext.Current.CancellationToken;
+        using var polls = new SemaphoreSlim(0);
+        long? firstPoll = null;
         fixture.OnRequest = frame =>
         {
-            if (frame.Command.Value == 0x1404) time.Advance(Momentum4Service.ControlPeerPollInterval);
+            if (frame.Command.Value == 0x1404)
+            {
+                firstPoll ??= time.GetTimestamp();
+                polls.Release();
+            }
         };
-        var started = time.GetTimestamp();
-        var operation = service.ConnectControlPeerAsync(new HeadsetPeerSelection(peer.Index, peer.Name, peer.Priority, false), TestContext.Current.CancellationToken);
-        for (var iteration = 0; iteration < 100 && !operation.IsCompleted; iteration++)
+        var operation = service.ConnectControlPeerAsync(new HeadsetPeerSelection(peer.Index, peer.Name, peer.Priority, false), ct);
+
+        // Die Uhr läuft erst ab der ersten Abfrage (der 8-s-Timer ist dann gesetzt) und nur bis zum Budget. Danach dreht
+        // niemand mehr an ihr: Gemessen wird so die Implementierung, nicht wie viele Schleifenrunden unter CPU-Last
+        // zwischen Timeout und Fortsetzung liefen (früher wackelig auf ausgelasteten CI-Runnern, 8,7 s).
+        Assert.True(await polls.WaitAsync(TimeSpan.FromSeconds(5), ct), "Peer polling did not start.");
+        var budget = Momentum4Service.ControlPeerPollTimeout;
+        while (!operation.IsCompleted && time.GetElapsedTime(firstPoll!.Value) < budget)
         {
             time.Advance(Momentum4Service.ControlPeerPollInterval);
-            await Task.Delay(1, TestContext.Current.CancellationToken);
+            await polls.WaitAsync(TimeSpan.FromMilliseconds(100), ct); // nächste Abfrage abwarten, sonst weiter
         }
 
+        await Task.WhenAny(operation, Task.Delay(TimeSpan.FromSeconds(10), ct));
+        Assert.True(operation.IsCompleted, "Peer polling did not stop once the budget had passed.");
         await Assert.ThrowsAsync<SettingNotAppliedException<string>>(() => operation);
-        Assert.InRange(time.GetElapsedTime(started), TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(8.6));
+        Assert.InRange(time.GetElapsedTime(firstPoll!.Value), budget, budget + Momentum4Service.ControlPeerPollInterval);
         Assert.Equal(TimeSpan.FromSeconds(8), Momentum4Service.ControlPeerPollTimeout);
         Assert.Equal(TimeSpan.FromMilliseconds(300), Momentum4Service.ControlPeerPollInterval);
         Assert.Single(fixture.Requests, frame => frame.Command.Value == 0x1402);

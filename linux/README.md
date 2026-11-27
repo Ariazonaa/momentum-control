@@ -13,7 +13,7 @@ The Linux companion covers the main Windows controls and feasible mobile workflo
 | Area | Linux implementation | Remaining differences |
 | --- | --- | --- |
 | Windows headset controls | Noise modes and sliders, EQ and saved presets, behavior and call settings, timer, rename, battery and device information | M5 Automatic wind reduction is unavailable on the tested firmware |
-| Windows desktop features | Optional tray menu, autostart, minimized launch, reconnect, transparency restoration, English/German, diagnostics and project release checks | No Windows-style tray quick-panel window, OS battery fallback when GAIA is disconnected, or CLI forwarding through the running GUI; release checks do not update Linux |
+| Windows desktop features | Optional tray menu, autostart, minimized launch, reconnect, transparency restoration, English/German, diagnostics, project release checks, battery from BlueZ while controls are disconnected, CLI forwarding through the running GUI, and a quick panel on left-click of the tray icon | Release checks do not update Linux; whether a desktop delivers the tray left-click depends on its tray implementation |
 | Multipoint | Paired-device list, connection state and capacity; guarded M4 connect action | M5 connect remains read-only; no disconnect or pairing deletion |
 | M5 immersive audio | Verified immersive audio and head tracking with readback | Requires M5 firmware 6.21.5; incompatible with Personalization mode |
 | Mobile Sound Check | Local bass/mid/treble A/B EQ comparison and preset saving | Independent fixed comparisons, not the manufacturer's algorithm |
@@ -130,6 +130,12 @@ Location is requested only by **Use current location** or previously enabled aut
 
 A confident zone entry submits the existing guarded full-curve EQ operation only when idle and still compatible. User edits during acquisition take precedence; a skipped entry is consumed rather than applied later. Leaving a zone keeps current settings. Uncertain/stale location fixes do not trigger changes, and failed EQ writes are not retried. Real permission prompts and GPS entry/exit remain unverified in automated/native UI checks, which use injected providers exclusively.
 
+**CLI and the running app:** while the GUI is connected to a headset, `momentumctl` hands the headset commands (`status`, `set`, `eq`, `rename`, `peers`, `connect-peer`) to it instead of opening a second Bluetooth connection, like `m4ctl` does on Windows. The GUI serves a private Unix socket in `$XDG_RUNTIME_DIR/momentum-control/` (directory 0700, socket 0600, same user only) and runs each command as one operation on its existing connection; the result also updates the window. Without a GUI session, `momentumctl` connects on its own as before. `devices` and the BTD 700 commands always run locally.
+
+**Quick panel:** with the tray icon enabled, a left-click opens a small panel with the battery level, the noise modes and, in ANC mode, the ANC strength (sent when you release the slider); a double-click opens the window, the right-click menu is unchanged. Some trays (for example GNOME with an AppIndicator extension) only offer the menu; then use the menu or the window.
+
+**Battery without controls:** while the controls are not connected, the header shows the battery level that BlueZ reports for the selected headset (`org.bluez.Battery1`, e.g. over the hands-free profile), marked "(Bluetooth)". `momentumctl devices --json` includes it as `battery`.
+
 Named CLI commands use the same backend guards:
 
 ```sh
@@ -181,7 +187,7 @@ Then add the module to your Waybar config and to one of the `modules-*` lists:
 
 The bar shows the battery level; the tooltip adds the charging state and the noise mode. The mode is also set as CSS class (`anc`, `adaptive`, `transparency`, `off`), so you can style it, for example `#custom-momentum.transparency { color: #8fbcbb; }`. The mode follows the same rules as the app. With several headsets, add `--device ADDRESS` to the `momentumctl` call in the script.
 
-Each update opens its own control connection, because the CLI does not go through a running GUI. Keep the interval long. The script and the module output were tested against the CLI's JSON format and without a headset (the module hides); a long-running test on hardware, also with the GUI open at the same time, has not been done yet.
+While the GUI is connected, each update goes through it and needs no extra Bluetooth connection; otherwise it opens its own control connection. Keep the interval long. The script and the module output were tested against the CLI's JSON format and without a headset (the module hides); a long-running test on hardware, also with the GUI open at the same time, has not been done yet.
 
 ## BTD 700 USB permissions and firmware
 

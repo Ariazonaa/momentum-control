@@ -142,7 +142,7 @@ import dbus
 dbus.SystemBus = forbidden
 dbus.SessionBus = forbidden
 from momentum_control import gui
-for name in ('preferences', 'desktop', 'i18n', 'updates', 'sound_zones', 'sound_check'):
+for name in ('preferences', 'desktop', 'i18n', 'updates', 'sound_zones', 'sound_check', 'control', 'quick_panel'):
     module = importlib.import_module('momentum_control.' + name)
     assert pathlib.Path(module.__file__).parent == pathlib.Path({str(self.app / 'momentum_control')!r})
 def launch(argv, minimized=False):
@@ -157,8 +157,8 @@ runpy.run_path({str(launcher)!r}, run_name='__main__')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, 'installed GUI entry reached\n')
         manifest = json.loads((self.app / 'manifest.json').read_text())['files']
-        self.assertEqual(len(manifest), 30)
-        for name in ('preferences.py', 'desktop.py', 'i18n.py', 'updates.py', 'sound_zones.py', 'sound_check.py'):
+        self.assertEqual(len(manifest), 32)
+        for name in ('preferences.py', 'desktop.py', 'i18n.py', 'updates.py', 'sound_zones.py', 'sound_check.py', 'control.py', 'quick_panel.py'):
             path = self.app / 'momentum_control' / name
             self.assertEqual(path.read_bytes(), (ROOT / 'momentum_control' / name).read_bytes())
             self.assertEqual(manifest[str(path.relative_to(self.prefix))], installer_module.digest(path.read_bytes()))

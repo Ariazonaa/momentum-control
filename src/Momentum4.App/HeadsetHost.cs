@@ -53,6 +53,7 @@ public sealed class HeadsetHost : IAsyncDisposable
         });
         _logger = _loggerFactory.CreateLogger<HeadsetHost>();
         Presets = new EqPresetStore(Path.Combine(DataDirectory, "presets.json"), _loggerFactory.CreateLogger<EqPresetStore>());
+        Zones = new Zones.ZoneController(this, Path.Combine(DataDirectory, "zones.json"), _loggerFactory.CreateLogger("Momentum4.App.Zones"));
 
         // m4ctl-Befehle über die Named Pipe: Solange die App läuft, spricht nur sie mit dem Headset.
         _controlLoop = Task.Run(() => ControlPipe.ServeAsync(ExecuteControlAsync, _loggerFactory.CreateLogger("Momentum4.App.ControlPipe"), _stopping.Token));
@@ -71,6 +72,20 @@ public sealed class HeadsetHost : IAsyncDisposable
     public ILoggerFactory LoggerFactory => _loggerFactory;
 
     public EqPresetStore Presets { get; }
+
+    /// <summary>Lokale Sound Zones (Standort → EQ-Kurve), auch im Tray-Betrieb aktiv.</summary>
+    public Zones.ZoneController Zones { get; }
+
+    private long _eqInteractiveUntilTicks;
+
+    /// <summary>
+    /// Sound Check offen oder gerade geschlossen: Die Zonen-Automatik schreibt dann nicht dazwischen (wie unter Linux).
+    /// </summary>
+    public bool EqInteractive => DateTimeOffset.UtcNow.UtcTicks < Interlocked.Read(ref _eqInteractiveUntilTicks);
+
+    /// <summary>An: bis auf Weiteres belegt; aus: noch 30 s Nachlauf, damit ein Zonen-Eintritt nicht sofort überschreibt.</summary>
+    public void SetEqInteractive(bool active) =>
+        Interlocked.Exchange(ref _eqInteractiveUntilTicks, active ? DateTimeOffset.MaxValue.UtcTicks : DateTimeOffset.UtcNow.AddSeconds(30).UtcTicks);
 
     public AppSettings Settings { get; private set; }
 
@@ -224,6 +239,7 @@ public sealed class HeadsetHost : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _stopping.CancelAsync();
+        await Zones.DisposeAsync();
         if (_batteryLoop is not null)
         {
             await _batteryLoop;

@@ -19,6 +19,14 @@ def _check_cancel(cancelled: threading.Event):
         raise ControlError('Operation cancelled')
 
 
+def _battery(interfaces) -> int | None:
+    """Akku laut BlueZ (org.bluez.Battery1, z. B. über HFP), wie der Windows-Fallback über den HFP-Knoten."""
+    value = interfaces.get('org.bluez.Battery1', {}).get('Percentage')
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= int(value) <= 100:
+        return None
+    return int(value)
+
+
 def _devices(objects) -> list[Device]:
     devices = []
     for path, interfaces in objects.items():
@@ -31,7 +39,7 @@ def _devices(objects) -> list[Device]:
         if str(path).rsplit('/dev_', 1)[1].replace('_', ':').upper() != address.upper():
             continue
         devices.append(Device(address.upper(), str(props.get('Alias', props.get('Name', address)))[:128],
-                              str(path), bool(props.get('Connected', False))))
+                              str(path), bool(props.get('Connected', False)), _battery(interfaces)))
     return sorted(devices, key=lambda device: (device.name, device.address))
 
 

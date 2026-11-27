@@ -46,6 +46,8 @@ All of this is checked on a real headset (firmware 3.37.3 and 3.38.3).
 - Battery and charging state, model and firmware
 - Noise control: Transparency, ANC with adjustable strength, Adaptive ANC, Off, plus anti-wind (off, maximum, automatic)
 - Equalizer: 5 bands at the headset's own frequencies, bass boost, sound mode (Equalizer, Podcast, Neutral), and presets you can save
+- Sound check: compare bass, midrange and treble A/B (+2/−2 dB) with your own music and save the result as a preset; a local comparison like on Linux, not the manufacturer's fitting
+- Sound zones: save a place with a radius and an EQ preset; when you arrive, the app applies the preset once. Local only, uses the Windows location (only while automation is on, at most once a minute)
 - Behaviour toggles: on-head detection, smart pause, touch controls, auto-answer, comfort call, tones and voice prompts, auto power-off
 - Multipoint: list the paired devices and connect to one
 - Tray icon with a quick panel on left-click and the full menu on right-click; about 5 MB of RAM while it sits in the tray
@@ -98,6 +100,8 @@ m4ctl mode toggle          # Transparency <-> ANC, good for a hotkey
 m4ctl strength 80          # ANC strength
 m4ctl preset MyCurve
 m4ctl battery              # just the number, for scripts
+m4ctl status --json        # same JSON as momentumctl on Linux, e.g. for Rainmeter or a Stream Deck
+m4ctl peers --json         # paired devices
 m4ctl autooff 30
 m4ctl immersive on         # MOMENTUM 5 only
 m4ctl sidetone 2           # transparency during calls, MOMENTUM 5 only for now

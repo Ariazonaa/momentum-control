@@ -82,7 +82,7 @@ class PreflightTests(unittest.TestCase):
                 self.write_core(printing(VALID.rstrip(b'\n') + suffix))
                 installer.install(self.prefix)
                 self.assertEqual((self.prefix / installer.APP / 'core/version.txt').read_bytes(), b'2.3.4-rc.1\n')
-                self.assertEqual(len(installer.current_manifest(self.prefix)), 30)
+                self.assertEqual(len(installer.current_manifest(self.prefix)), 32)
         for version in (b'1.2', b'1.2.3+build', b'1.2.3-', b'1.2.3-.bad', b'1.2.3-/bad',
                         b'1.2.3-hello world', b'1.2.3-\xff', b'1.2.3-' + b'a' * 59):
             with self.subTest(version=version):
@@ -103,7 +103,7 @@ class PreflightTests(unittest.TestCase):
         manifest = json.loads(manifest_path.read_text())
         del manifest['files'][str(metadata.relative_to(self.prefix))]
         manifest_path.write_text(json.dumps(manifest))
-        self.assertEqual(len(installer.current_manifest(self.prefix)), 29)
+        self.assertEqual(len(installer.current_manifest(self.prefix)), 31)
         (self.source / 'core/version.txt').write_bytes(b'not trusted\n')
         installer.install(self.prefix)
         self.assertEqual(metadata.read_bytes(), b'2.3.4-rc.1\n')

@@ -5,13 +5,16 @@ import math
 import sys
 import threading
 
-from .backend import BluetoothClient, ControlError, Device, Snapshot, discover
+from . import control
+from .backend import BluetoothClient, ControlError, Device, PeerDevice, Snapshot, discover
 
 _BOOLEAN = ('anc_enabled', 'adaptive_anc', 'transparency', 'touch_controls', 'smart_pause',
             'on_head_detection', 'auto_answer', 'comfort_call', 'bass_boost',
             'pause_on_transparency', 'immersive_audio', 'head_tracking', 'battery_protection')
 _CODECS = {'sbc': 'SBC', 'aptx-classic': 'APTX', 'aptx-adaptive': 'APTX_ADAPTIVE',
            'aptx-lossless': 'APTX_LOSSLESS', 'aptx-lite': 'APTX_LITE', 'lc3': 'LC3'}
+# Headset commands a running GUI can run on its own connection (control.py); devices and dongle-* stay local.
+FORWARDABLE = frozenset(('status', 'set', 'eq', 'rename', 'peers', 'connect-peer'))
 _INTEGER = {'anc_strength': 100, 'transparency_level': 100, 'antiwind': 2, 'audio_prompts': 2, 'sound_mode': 2, 'auto_power_off': 3600, 'sidetone': 5}
 
 
@@ -91,24 +94,89 @@ def _dongle_command(args, cancelled):
     return 0
 
 
-def _print_snapshot(snapshot: Snapshot, as_json: bool):
-    values = asdict(snapshot)
-    values['writable'] = sorted(snapshot.writable)
+def _print_snapshot(snapshot: Snapshot, as_json: bool, out=None):
+    out = out if out is not None else sys.stdout
     if as_json:
-        print(json.dumps(values, ensure_ascii=True))
+        values = asdict(snapshot)
+        values['writable'] = sorted(snapshot.writable)
+        print(json.dumps(values, ensure_ascii=True), file=out)
         return
-    print(f'Model: {snapshot.model}\nFirmware: {snapshot.firmware}')
-    print(f'Battery: {snapshot.battery}%' if snapshot.battery is not None else 'Battery: unavailable')
+    print(f'Model: {snapshot.model}\nFirmware: {snapshot.firmware}', file=out)
+    print(f'Battery: {snapshot.battery}%' if snapshot.battery is not None else 'Battery: unavailable', file=out)
     for name, value in snapshot.settings.items():
-        print(f'{name}: {value}')
+        print(f'{name}: {value}', file=out)
     for band, gain in enumerate(snapshot.eq_bands):
         frequency = f' ({snapshot.eq_frequencies[band]} Hz)' if band < len(snapshot.eq_frequencies) else ''
-        print(f'EQ {band}{frequency}: {gain:.1f} dB')
+        print(f'EQ {band}{frequency}: {gain:.1f} dB', file=out)
     for note in snapshot.notes:
-        print(note)
+        print(note, file=out)
 
 
-def main(argv: list[str] | None = None) -> int:
+def precheck(args, value, snapshot) -> str | None:
+    """Why the current session cannot run a command, before any I/O; ``None`` if it can.
+
+    A running GUI uses this so a script typo answers with an error instead of dropping its headset connection.
+    """
+    writable = snapshot.writable
+    if args.command == 'set':
+        if args.name not in writable:
+            return f'{args.name} is not writable on this model or firmware'
+        allowed = getattr(snapshot, 'choices', {}).get(args.name)
+        if allowed and value not in allowed:
+            return f'{args.name} does not accept {value} on this headset'
+    elif args.command == 'eq':
+        if 'eq' not in writable:
+            return 'The equalizer is not writable on this model or firmware'
+        if not 0 <= args.band < len(snapshot.eq_bands):
+            return f'EQ band {args.band} does not exist on this headset'
+        bounds = getattr(snapshot, 'eq_range', None)
+        if bounds is not None and not bounds[0] <= args.gain <= bounds[1]:
+            return f'EQ gain {args.gain} is outside the headset range {bounds[0]}..{bounds[1]} dB'
+    elif args.command == 'rename':
+        if 'rename' not in writable:
+            return 'rename is not available on this model or firmware'
+    elif args.command == 'connect-peer':
+        if 'connect_peer' not in writable:
+            return 'Peer connection is read-only on this model or firmware'
+        if not any(peer.index == args.index and peer.name == args.expected_name for peer in getattr(snapshot, 'peers', ())):
+            return 'Peer identity changed; read peers again'
+    return None
+
+
+def run_headset(args, value, client, out=None):
+    """Runs a parsed headset command on a connected client and prints the result; returns the resulting snapshot."""
+    out = out if out is not None else sys.stdout
+    if args.command == 'rename':
+        snapshot = client.rename(args.name)
+    elif args.command == 'connect-peer':
+        state = client.snapshot()
+        peers = [peer for peer in state.peers if peer.index == args.index and peer.name == args.expected_name]
+        if len(peers) != 1:
+            raise ControlError('Peer identity changed; read peers again')
+        snapshot = client.connect_peer(peers[0])
+    elif args.command == 'peers':
+        snapshot = client.snapshot()
+        if args.json:
+            print(json.dumps(dict(peers=[asdict(peer) for peer in snapshot.peers], max_connections=snapshot.max_connections, available=snapshot.peers_available, writable='connect_peer' in snapshot.writable), ensure_ascii=True), file=out)
+        else:
+            print(f'Connection capacity: {snapshot.max_connections if snapshot.max_connections is not None else "unavailable"}', file=out)
+            for peer in snapshot.peers:
+                print(f'{peer.index}: {peer.name!r} · {"connected" if peer.connected is True else "disconnected" if peer.connected is False else "unknown"}' + (' · this PC' if peer.is_this_pc else ''), file=out)
+            if 'connect_peer' not in snapshot.writable:
+                print('Peer connection is read-only on this model or firmware.', file=out)
+        return snapshot
+    elif args.command == 'set':
+        snapshot = client.set_value(args.name, value)
+    elif args.command == 'eq':
+        snapshot = client.set_value('eq', args.gain, args.band)
+    else:
+        snapshot = client.snapshot()
+    _print_snapshot(snapshot, args.json, out)
+    return snapshot
+
+
+def parse_args(argv: list[str] | None):
+    """Parses and validates a command line; argparse errors exit with code 2."""
     parser = argparse.ArgumentParser(description='Momentum headset controls over Bluetooth and BTD 700 USB audio/firmware')
     sub = parser.add_subparsers(dest='command', required=True)
     for command in ('devices', 'status', 'set', 'eq', 'rename', 'peers', 'connect-peer'):
@@ -159,6 +227,23 @@ def main(argv: list[str] | None = None) -> int:
         parser.error('connect-peer requires index 0..63 and the exact printable peer name')
     if args.command == 'eq' and (not 0 <= args.band < 16 or not math.isfinite(args.gain)):
         parser.error('EQ requires a band from 0 to 15 and a finite gain')
+    return args, value
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    args, value = parse_args(argv)
+    if args.command in FORWARDABLE:
+        try:
+            forwarded = control.forward(argv)
+        except RuntimeError as error:
+            print(f'momentumctl: {error}', file=sys.stderr)
+            return 1
+        if forwarded is not None:
+            code, out, err = forwarded
+            sys.stdout.write(out)
+            sys.stderr.write(err)
+            return code
     cancelled = threading.Event()
     client = None
     try:
@@ -182,32 +267,7 @@ def main(argv: list[str] | None = None) -> int:
             raise ControlError('Multiple headsets found; select one with --device ADDRESS')
         client = BluetoothClient(devices[0], cancelled)
         client.connect()
-        if args.command == 'rename':
-            snapshot = client.rename(args.name)
-        elif args.command == 'connect-peer':
-            state = client.snapshot()
-            peers = [peer for peer in state.peers if peer.index == args.index and peer.name == args.expected_name]
-            if len(peers) != 1:
-                raise ControlError('Peer identity changed; read peers again')
-            snapshot = client.connect_peer(peers[0])
-        elif args.command == 'peers':
-            snapshot = client.snapshot()
-            if args.json:
-                print(json.dumps(dict(peers=[asdict(peer) for peer in snapshot.peers], max_connections=snapshot.max_connections, available=snapshot.peers_available, writable='connect_peer' in snapshot.writable), ensure_ascii=True))
-            else:
-                print(f'Connection capacity: {snapshot.max_connections if snapshot.max_connections is not None else "unavailable"}')
-                for peer in snapshot.peers:
-                    print(f'{peer.index}: {peer.name!r} · {"connected" if peer.connected is True else "disconnected" if peer.connected is False else "unknown"}' + (' · this PC' if peer.is_this_pc else ''))
-                if 'connect_peer' not in snapshot.writable:
-                    print('Peer connection is read-only on this model or firmware.')
-            return 0
-        elif args.command == 'set':
-            snapshot = client.set_value(args.name, value)
-        elif args.command == 'eq':
-            snapshot = client.set_value('eq', args.gain, args.band)
-        else:
-            snapshot = client.snapshot()
-        _print_snapshot(snapshot, args.json)
+        run_headset(args, value, client)
         return 0
     except Exception as error:
         print(f'momentumctl: {error}', file=sys.stderr)
