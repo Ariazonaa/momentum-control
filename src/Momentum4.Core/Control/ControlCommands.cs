@@ -32,7 +32,8 @@ public static class ControlCommands
     public const string Help = """
         m4ctl – MOMENTUM 4 von der Kommandozeile steuern (inoffiziell, lokal)
 
-          m4ctl status                           Zustand anzeigen
+          m4ctl status [--json]                  Zustand anzeigen; --json im Schema von momentumctl (Linux)
+          m4ctl peers [--json]                   gekoppelte Geräte auflisten
           m4ctl battery                          nur den Akku in Prozent (für Skripte)
           m4ctl mode transparency|anc|adaptive|off
                                                  Noise Control (auch: transparenz, aus)
@@ -67,13 +68,27 @@ public static class ControlCommands
             return ControlResult.Usage(Help);
         }
 
+        var json = args.Skip(1).Any(arg => arg == "--json");
+        var rest = args.Skip(1).Where(arg => arg != "--json").ToList();
         var command = args[0].ToLowerInvariant();
-        var value = args.Count > 1 ? string.Join(' ', args.Skip(1)) : null;
+        var value = rest.Count > 0 ? string.Join(' ', rest) : null;
         try
         {
+            if (command is "status" && json)
+            {
+                return HeadsetSnapshotJson.FromState(service.Store.Current) is { } snapshot
+                    ? ControlResult.Ok(HeadsetSnapshotJson.Serialize(snapshot))
+                    : ControlResult.Error($"Headset nicht verbunden ({service.Store.Current.Connection}).");
+            }
+
             if (command is "status")
             {
                 return ControlResult.Ok(Describe(service.Store.Current, presets));
+            }
+
+            if (command is "peers")
+            {
+                return Peers(service.Store.Current, json);
             }
 
             if (command is "battery")
@@ -123,6 +138,60 @@ public static class ControlCommands
         {
             return ControlResult.Error($"Nicht ausgeführt: {DescribeError(ex)}");
         }
+    }
+
+    /// <summary>Gekoppelte Geräte; mit <paramref name="json"/> im Format von <c>momentumctl peers --json</c>.</summary>
+    private static ControlResult Peers(Momentum4State state, bool json)
+    {
+        if (state.Connection != ConnectionState.Connected || state.Multipoint is not { } multipoint)
+        {
+            return ControlResult.Error($"Geräteliste unbekannt ({state.Connection}).");
+        }
+
+        if (!json)
+        {
+            var text = new StringBuilder();
+            foreach (var peer in multipoint.Devices)
+            {
+                text.AppendLine(CultureInfo.InvariantCulture, $"{peer.Index}: {peer.Name}{(peer.IsThisComputer ? " (dieser PC)" : string.Empty)} – {(peer.Connected ? "verbunden" : "nicht verbunden")}");
+            }
+
+            return ControlResult.Ok(text.ToString().TrimEnd());
+        }
+
+        using var stream = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("peers");
+            writer.WriteStartArray();
+            foreach (var peer in multipoint.Devices)
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber("index", peer.Index);
+                writer.WriteString("name", peer.Name);
+                writer.WriteBoolean("connected", peer.Connected);
+                writer.WriteBoolean("is_this_pc", peer.IsThisComputer);
+                writer.WriteNumber("priority", 0);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            if (multipoint.MaxConnections is { } max)
+            {
+                writer.WriteNumber("max_connections", max);
+            }
+            else
+            {
+                writer.WriteNull("max_connections");
+            }
+
+            writer.WriteBoolean("available", true);
+            writer.WriteBoolean("writable", state.CanWrite(HeadsetControl.ConnectPeer));
+            writer.WriteEndObject();
+        }
+
+        return ControlResult.Ok(Encoding.UTF8.GetString(stream.ToArray()));
     }
 
     /// <summary>Kurzbeschreibung eines Fehlers wie in der App (ohne Stacktrace).</summary>

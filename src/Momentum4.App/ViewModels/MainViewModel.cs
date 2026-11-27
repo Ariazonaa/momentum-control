@@ -33,6 +33,8 @@ public sealed partial class MainViewModel : ObservableObject, IActionRunner, IDi
         Behavior = new BehaviorViewModel(this);
         Devices = new DevicesViewModel(this);
         Spatial = new SpatialViewModel(this);
+        SoundCheck = new SoundCheckViewModel(this, host.Presets, Equalizer.PresetsChanged, host.SetEqInteractive);
+        Zones = new ZonesViewModel(host, dispatcher);
         Settings = new SettingsViewModel(host, settingsChanged);
         _hostChanged = (_, _) => _dispatcher.TryEnqueue(Attach);
         _stateChanged = (_, e) => _dispatcher.TryEnqueue(() => Apply(e.Current));
@@ -49,6 +51,10 @@ public sealed partial class MainViewModel : ObservableObject, IActionRunner, IDi
     public DevicesViewModel Devices { get; }
 
     public SpatialViewModel Spatial { get; }
+
+    public SoundCheckViewModel SoundCheck { get; }
+
+    public ZonesViewModel Zones { get; }
 
     public SettingsViewModel Settings { get; }
 
@@ -99,6 +105,7 @@ public sealed partial class MainViewModel : ObservableObject, IActionRunner, IDi
     public void Dispose()
     {
         _host.Changed -= _hostChanged;
+        Zones.Dispose();
         if (_store is not null)
         {
             _store.StateChanged -= _stateChanged;
@@ -214,6 +221,8 @@ public sealed partial class MainViewModel : ObservableObject, IActionRunner, IDi
         NoiseControl.Apply(state.NoiseControl, state.AutoPauseOnTransparency, connected, state.TransparencyLevel,
             state.CanWrite(HeadsetControl.TransparencyLevel), state.ControlChoices?.GetValueOrDefault(HeadsetIntegerControl.AntiWind));
         Equalizer.Apply(state.Equalizer, connected);
+        SoundCheck.Apply(state, connected);
+        Zones.Apply(state);
         Behavior.Apply(state.Behavior, state.AutoPowerOffSeconds, state.PromptMode, connected, state);
         Spatial.Apply(state, connected);
         Devices.Apply(state.Multipoint, connected, state.Device is not { } peerDevice || new FeatureGate(peerDevice.Firmware, peerDevice.ModelId).IsMomentum4);

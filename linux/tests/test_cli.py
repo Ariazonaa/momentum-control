@@ -20,6 +20,63 @@ class CliTests(unittest.TestCase):
                 cli.main(['--help'])
         self.assertEqual(result.exception.code, 0)
 
+    def test_forwarded_command_skips_bluetooth(self):
+        output = io.StringIO()
+        with patch.object(cli.control, 'forward', return_value=(0, 'forwarded\n', '')) as forward, \
+                patch.object(cli, 'discover', side_effect=AssertionError('unexpected Bluetooth discovery')), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(cli.main(['set', 'smart_pause', 'on']), 0)
+        forward.assert_called_once_with(['set', 'smart_pause', 'on'])
+        self.assertEqual(output.getvalue(), 'forwarded\n')
+
+    def test_forwarded_failure_keeps_exit_code_and_stderr(self):
+        errors = io.StringIO()
+        with patch.object(cli.control, 'forward', return_value=(1, '', 'momentumctl: rejected\n')), \
+                contextlib.redirect_stderr(errors):
+            self.assertEqual(cli.main(['status']), 1)
+        self.assertEqual(errors.getvalue(), 'momentumctl: rejected\n')
+
+    def test_devices_and_invalid_calls_are_not_forwarded(self):
+        device = cli.Device('00:11:22:33:44:55', 'Renamed', '/org/bluez/hci0/dev_00_11_22_33_44_55', False)
+        with patch.object(cli.control, 'forward', side_effect=AssertionError('must not forward')), \
+                patch.object(cli, 'discover', return_value=[device]), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(['devices']), 0)
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                cli.main(['set', 'sidetone', '9'])
+
+    def test_run_headset_writes_status_to_the_given_stream(self):
+        snapshot = cli.Snapshot('M4AEBT Black', '3.38.3', 80, {'anc_enabled': True}, (1.0,), (90,), frozenset(), ())
+        class Client:
+            def snapshot(self):
+                return snapshot
+        args, value = cli.parse_args(['status', '--json'])
+        output = io.StringIO()
+        self.assertIs(cli.run_headset(args, value, Client(), output), snapshot)
+        self.assertEqual(json.loads(output.getvalue())['battery'], 80)
+
+    def test_precheck_rejects_what_the_session_cannot_run(self):
+        peer = cli.PeerDevice(1, 'Phone', False, False)
+        snapshot = cli.Snapshot('M4AEBT Black', '3.38.3', 80, {'anc_enabled': True, 'antiwind': 0}, (1.0, 2.0), (90, 325),
+                                frozenset({'anc_enabled', 'antiwind', 'eq', 'connect_peer'}), (), choices={'antiwind': (0, 1)},
+                                peers=(peer,), eq_range=(-6.0, 6.0))
+        cases = [
+            (['set', 'immersive_audio', 'on'], 'immersive_audio'),
+            (['set', 'antiwind', '2'], 'antiwind'),
+            (['eq', '5', '1.0'], 'band'),
+            (['eq', '0', '7'], 'range'),
+            (['rename', 'New'], 'rename'),
+            (['connect-peer', '1', '--expected-name', 'Other'], 'peer'),
+        ]
+        for argv, word in cases:
+            with self.subTest(argv=argv):
+                args, value = cli.parse_args(argv)
+                self.assertIn(word, cli.precheck(args, value, snapshot))
+        for argv in (['status'], ['set', 'anc_enabled', 'off'], ['set', 'antiwind', '1'], ['eq', '1', '-2.5'],
+                     ['connect-peer', '1', '--expected-name', 'Phone'], ['peers']):
+            with self.subTest(argv=argv):
+                args, value = cli.parse_args(argv)
+                self.assertIsNone(cli.precheck(args, value, snapshot))
+
     def test_devices_json(self):
         device = cli.Device('00:11:22:33:44:55', 'Renamed', '/org/bluez/hci0/dev_00_11_22_33_44_55', False)
         output = io.StringIO()

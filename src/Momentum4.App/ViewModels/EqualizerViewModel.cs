@@ -248,6 +248,13 @@ public sealed partial class EqualizerViewModel : ObservableObject
         });
     }
 
+    /// <summary>Nach dem Speichern eines Presets von außen (Sound Check): Liste neu laden und Auswahl abgleichen.</summary>
+    public void PresetsChanged()
+    {
+        ReloadPresetNames();
+        Apply(_last, IsAvailable);
+    }
+
     private void ReloadPresetNames()
     {
         PresetNames.Clear();

@@ -149,8 +149,8 @@ public sealed class DongleFirmwareTests
         Assert.True(peer.LeaseDisposed); Assert.True(peer.Endpoints.Single().Disposed);
         peer = VersionPeer(); peer.OnUpgrade = (_, _) => { peer.StallRead = true; return null; };
         using var waitingService = new DongleFirmwareService(peer, peer.Clock, new FirmwareHttp([]));
-        await Assert.ThrowsAnyAsync<Exception>(() => peer.Complete(waitingService.CheckUpdateAsync(peer.Target, TestContext.Current.CancellationToken)));
-        Assert.True(peer.Elapsed >= 6 && peer.Elapsed <= 6.1); Assert.True(peer.LeaseDisposed); Assert.All(peer.Endpoints, endpoint => Assert.True(endpoint.Disposed));
+        await Assert.ThrowsAnyAsync<Exception>(() => peer.CompleteAfterStall(waitingService.CheckUpdateAsync(peer.Target, TestContext.Current.CancellationToken), TimeSpan.FromSeconds(6)));
+        Assert.InRange(peer.StallElapsed, 6, 6.1); Assert.True(peer.LeaseDisposed); Assert.All(peer.Endpoints, endpoint => Assert.True(endpoint.Disposed));
         Assert.All(peer.ReadTimeouts, timeout => Assert.True(timeout <= TimeSpan.FromSeconds(6)));
     }
 

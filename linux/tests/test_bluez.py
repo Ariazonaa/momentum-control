@@ -189,6 +189,19 @@ class BlueZTests(unittest.TestCase):
                 changed = dict(props, **{field: value})
                 self.assertEqual(backend._devices({self.device.path: {'org.bluez.Device1': changed}}), [])
 
+    def test_discovery_reads_bluez_battery_level(self):
+        props = {'Address': self.device.address, 'Alias': 'Headset', 'Paired': True,
+                 'UUIDs': [backend.GAIA_UUID], 'Connected': True}
+        cases = [({'org.bluez.Battery1': {'Percentage': 64}}, 64),
+                 ({'org.bluez.Battery1': {'Percentage': 150}}, None),
+                 ({'org.bluez.Battery1': {'Percentage': True}}, None),
+                 ({'org.bluez.Battery1': {}}, None),
+                 ({}, None)]
+        for extra, expected in cases:
+            with self.subTest(extra=extra):
+                objects = {self.device.path: {'org.bluez.Device1': props, **extra}}
+                self.assertEqual(backend._devices(objects)[0].battery, expected)
+
     def test_device_lock_fails_fast_and_is_released(self):
         first = backend._DeviceLock(self.device.address)
         try:

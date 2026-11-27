@@ -25,7 +25,7 @@ MAX_PROBE_STDERR = 4096
 MAX_CORE_BYTES = 128 * 1024 * 1024
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MODULES = ('__init__.py', '__main__.py', 'backend.py', 'cli.py', 'gui.py', 'protocol.py', 'dongle.py', 'firmware.py', 'firmware_update.py',
-           'preferences.py', 'desktop.py', 'i18n.py', 'updates.py', 'sound_zones.py', 'sound_check.py',
+           'preferences.py', 'desktop.py', 'i18n.py', 'updates.py', 'sound_zones.py', 'sound_check.py', 'control.py', 'quick_panel.py',
            'core_proxy.py', 'bluez.py', 'hidraw.py', 'models.py', 'errors.py')
 DEPENDENCIES = '''  Debian 13 / Ubuntu 25.04+: sudo apt install python3-pyside6.qtcore python3-pyside6.qtgui python3-pyside6.qtwidgets python3-dbus python3-gi
   Ubuntu 24.04:  sudo apt install python3-pip python3-dbus python3-gi libegl1 libgl1 libxkbcommon0 libfontconfig1
